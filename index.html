@@ -177,6 +177,11 @@
   .login-title{font-family:var(--font-head); font-size:22px; margin-bottom:4px;}
   .login-sub{font-size:13px; color:var(--muted); margin-bottom:14px;}
   .login-wrap .fld{text-align:right;}
+  .pass-wrap{position:relative; display:block;}
+  .pass-wrap .input{padding-left:44px;}
+  .pass-eye{position:absolute; left:6px; top:50%; transform:translateY(-50%); width:34px; height:34px; border-radius:9px;
+    display:flex; align-items:center; justify-content:center; font-size:17px; background:transparent; color:var(--muted);}
+  .pass-eye:active{background:var(--surface-2);}
 
   /* בורר תאריך נוח למסך הנוכחות */
   .date-nav{display:flex; align-items:stretch; gap:8px; margin-top:14px;}
@@ -319,9 +324,14 @@
           <button id="lg-staff" class="active" onclick="setLoginMode('staff')">צוות</button>
           <button id="lg-trainee" onclick="setLoginMode('trainee')">מתאמנים</button>
         </div>
-        <label class="fld"><span class="lbl">שם</span><select class="input" id="loginName"></select></label>
+        <label class="fld"><span class="lbl">שם</span>
+          <input class="input" type="text" id="loginName" list="loginNames" placeholder="הקלד/י שם" autocomplete="off">
+          <datalist id="loginNames"></datalist></label>
         <label class="fld"><span class="lbl" id="loginPassLbl">סיסמה</span>
-          <input class="input" type="password" id="loginPass" placeholder="הזינו סיסמה" autocomplete="off"></label>
+          <span class="pass-wrap">
+            <input class="input" type="password" id="loginPass" placeholder="הזינו סיסמה" autocomplete="off">
+            <button type="button" class="pass-eye" id="loginEye" onclick="toggleLoginPass()" aria-label="הצג או הסתר סיסמה">👁</button>
+          </span></label>
         <button class="btn" onclick="doLogin()">התחבר</button>
         <div id="loginMsg" style="margin-top:10px"></div>
       </div>
@@ -591,6 +601,15 @@ async function api(action, params){
   if(!json.ok) throw new Error(json.error || 'שגיאה לא ידועה מהשרת');
   return json.data;
 }
+// מבטיח ש-STATE.data תמיד יכיל את שלושת המערכים (מונע קריסה אם השרת החזיר תשובה חלקית)
+function normalizeData(d){
+  d = d || {};
+  return {
+    coaches: Array.isArray(d.coaches) ? d.coaches : [],
+    groups:  Array.isArray(d.groups)  ? d.groups  : [],
+    members: Array.isArray(d.members) ? d.members : []
+  };
+}
 
 // ---------- ניווט ----------
 function show(view){
@@ -822,7 +841,7 @@ async function init(){
   $('tabbar').style.display='none';
   if(!getApiUrl()){ show('setup'); return; }
   try{
-    STATE.data = await api('getAll');
+    STATE.data = normalizeData(await api('getAll'));
     try{ LOGIN_USERS = await api('getUsers'); }catch(e){ LOGIN_USERS = []; }  // ידרוש פריסה מחדש של Code.gs
     STATE.managerFilter = localStorage.getItem('ttc_mgrfilter')||'';
     // שחזור סשן קיים
@@ -841,7 +860,11 @@ function sessionValid(s){
   if(s.role==='trainee') return STATE.data.members.some(function(m){return m.id===s.memberId;});
   return false;
 }
-function enterApp(sess){
+async function enterApp(sess){
+  // אם הטעינה הראשונית נכשלה/הייתה חלקית — ננסה לטעון שוב לפני שמציגים (מונע מסך ריק/שגיאה)
+  if(!STATE.data || (!STATE.data.groups.length && !STATE.data.members.length && !STATE.data.coaches.length)){
+    try{ STATE.data = normalizeData(await api('getAll')); }catch(e){ STATE.data = normalizeData(STATE.data); }
+  }
   STATE.role=sess.role; STATE.coachId=sess.coachId||null; STATE.memberId=sess.memberId||null; STATE.loginName=sess.name||'';
   updateChips();
   $('tabbar').style.display='flex';
@@ -852,7 +875,8 @@ function showLogin(){
   $('tabbar').style.display='none';
   setLoginMode(LOGIN_MODE);
   $('loginMsg').innerHTML='';
-  if($('loginPass')) $('loginPass').value='';
+  if($('loginPass')){ $('loginPass').value=''; $('loginPass').type='password'; }
+  if($('loginEye')) $('loginEye').textContent='👁';
   show('login');
 }
 function loginNamesFor(mode){
@@ -870,9 +894,15 @@ function setLoginMode(mode){
   $('lg-staff').classList.toggle('active', mode==='staff');
   $('lg-trainee').classList.toggle('active', mode==='trainee');
   var us = loginNamesFor(mode);
-  $('loginName').innerHTML = us.map(function(u){ return '<option value="'+esc(u.name)+'">'+esc(u.name)+'</option>'; }).join('') || '<option value="">— אין —</option>';
+  $('loginNames').innerHTML = us.map(function(u){ return '<option value="'+esc(u.name)+'"></option>'; }).join('');  // הצעות אוטומטיות (לא כפייה)
+  $('loginName').value='';
   $('loginPassLbl').textContent = (mode==='trainee') ? 'סיסמה (רשות)' : 'סיסמה';
   $('loginMsg').innerHTML='';
+}
+function toggleLoginPass(){
+  var i=$('loginPass'), e=$('loginEye');
+  if(i.type==='password'){ i.type='text'; e.textContent='🙈'; }
+  else { i.type='password'; e.textContent='👁'; }
 }
 async function doLogin(){
   var name = $('loginName').value;
@@ -1091,7 +1121,7 @@ async function renderTraineeHome(){
       '<div class="avatar-wrap" style="margin-bottom:6px">'+avatar(coachName(g.coachId),'coach',g.coachId)+
       '<div class="aw-txt"><div class="g-name">'+esc(g.name)+'</div><div class="g-coach">👤 '+esc(coachName(g.coachId))+'</div>'+
       '<div class="g-meta">'+esc(slotsLabel(g))+'</div></div></div>'+
-      '<button class="btn secondary sm" style="margin:6px 0 10px" onclick="openTraineeAbsence(\''+gid+'\')">📅 דיווח: לא אגיע לתאריך</button>'+
+      '<button class="btn secondary sm" style="margin:6px 0 10px" onclick="openTraineeAbsence(\''+gid+'\')">🚫 דיווח: לא אגיע</button>'+
       '<div class="sub" style="margin-bottom:4px">חברי הקבוצה ('+members.length+'):</div>'+memHtml+'</div>';
   }).join('');
 }
@@ -1099,13 +1129,25 @@ var TRAINEE_ABS = {};
 // חלון דיווח היעדרות למתאמן
 function openTraineeAbsence(groupId){
   var g=STATE.data.groups.find(function(x){return x.id===groupId;}); if(!g) return;
-  openModal('<h3>דיווח היעדרות</h3><p class="sub">'+esc(g.name)+' · '+esc(coachName(g.coachId))+'</p>'+
-    '<div class="lbl" style="font-size:13px;font-weight:600;margin-bottom:5px">לאיזה תאריך לא תגיע?</div>'+
-    makeupNavHtml()+
-    '<label class="fld" style="margin-top:12px"><span class="lbl">הערה (רשות)</span><input class="input" id="absNote" placeholder="למשל: מחלה"></label>'+
+  // המתאמן רק מדווח שלא יגיע לאחד מהאימונים הקרובים של הקבוצה — הוא לא מבקש/קובע תאריך להזזה
+  var ups = upcomingSessions(g, 8);
+  var picker;
+  if(ups.length){
+    picker = '<label class="fld"><span class="lbl">לאיזה אימון לא תגיע?</span>'+
+      '<select class="input" id="absDate">'+
+      ups.map(function(u){ var nd=niceDate(u.date); return '<option value="'+u.date+'">'+esc(nd.day+' · '+nd.num+(u.time?' · '+fmtTime(u.time):''))+'</option>'; }).join('')+
+      '</select></label>';
+  } else {
+    var d=addDaysISO(todayISO(), slotNextOffset(g)); var nd=niceDate(d);
+    picker = '<div class="fld"><span class="lbl">האימון הקרוב</span>'+
+      '<div class="input" style="display:flex;align-items:center">'+esc(nd.day+' · '+nd.num)+'</div>'+
+      '<input type="hidden" id="absDate" value="'+d+'"></div>';
+  }
+  openModal('<h3>דיווח: לא אגיע</h3><p class="sub">'+esc(g.name)+' · '+esc(coachName(g.coachId))+'</p>'+
+    picker+
+    '<label class="fld" style="margin-top:12px"><span class="lbl">סיבה (רשות)</span><input class="input" id="absNote" placeholder="למשל: מחלה"></label>'+
     '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">חזרה</button>'+
     '<button class="btn" style="background:var(--absent)" onclick="doReportAbsence(\''+groupId+'\')">שליחה</button></div>');
-  $('makeupDate').value = addDaysISO(todayISO(), slotNextOffset(g)); updateMakeupLabel();
 }
 // היסט לימים עד האימון הקרוב של הקבוצה (לנוחות ברירת מחדל)
 function slotNextOffset(g){
@@ -1113,8 +1155,19 @@ function slotNextOffset(g){
   groupSlots(g).forEach(function(s){ var d=(Number(s.day)-today+7)%7; if(d===0) d=7; if(d<best) best=d; });
   return best;
 }
+// רשימת האימונים הקרובים של הקבוצה (על פי הימים/שעות הקבועים) — עד count מפגשים
+function upcomingSessions(g, count){
+  var slots=groupSlots(g); if(!slots.length) return [];
+  var out=[], base=new Date(); base.setHours(0,0,0,0);
+  for(var i=0; i<70 && out.length<count; i++){
+    var d=new Date(base); d.setDate(base.getDate()+i);
+    var iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    slots.forEach(function(s){ if(Number(s.day)===d.getDay()) out.push({date:iso, time:s.time}); });
+  }
+  return out.slice(0,count);
+}
 async function doReportAbsence(groupId){
-  var date=$('makeupDate').value; if(!date){ toast('בחרו תאריך','bad'); return; }
+  var date=$('absDate').value; if(!date){ toast('בחרו אימון','bad'); return; }
   var note=$('absNote').value.trim();
   try{ await api('reportAbsence',{date:date, groupId:groupId, memberId:STATE.memberId, note:note, by:nameOfMember(STATE.memberId)});
     closeModal(); toast('הדיווח נשלח ✓','ok'); renderTraineeHome();
@@ -1260,7 +1313,7 @@ function openUserModal(){
 async function saveUser(){
   var name=$('uName').value.trim(); if(!name){ toast('נא להזין שם','bad'); return; }
   try{ await api('addUser',{name:name, role:$('uRole').value, password:$('uPass').value});
-    await refreshUsers(); STATE.data = await api('getAll');  // ריענון (אולי נוצר מאמן/חניך)
+    await refreshUsers(); STATE.data = normalizeData(await api('getAll'));  // ריענון (אולי נוצר מאמן/חניך)
     closeModal(); renderUsersManage(); populateSelects(); toast('נשמר ✓','ok');
   }catch(e){ toast('שגיאה: '+e.message,'bad'); }
 }
