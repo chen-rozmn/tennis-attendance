@@ -318,6 +318,7 @@
       </div>
       <h2 class="section" id="homeTodayTitle">🎾 המפגשים של היום</h2>
       <div id="homeToday" style="margin-bottom:16px"></div>
+      <div id="homeAbsences" style="margin-bottom:16px"></div>
       <div class="home-actions" id="homeActions"></div>
     </div>
 
@@ -451,8 +452,9 @@ const CONFIG = {
 // ---------- מצב ----------
 const STATE = {
   data:{coaches:[],groups:[],members:[]},
-  role:'coach',          // 'coach' = מאמן רגיל (רואה רק את עצמו) | 'manager' = מנהל (רואה הכל)
+  role:'coach',          // 'coach' = מאמן | 'manager' = מנהל | 'trainee' = מתאמן (רואה רק את הקבוצה שלו)
   coachId:null,          // מזהה המאמן שנבחר (במצב מאמן)
+  memberId:null,         // מזהה המתאמן שנבחר (במצב מתאמן)
   managerFilter:'',      // סינון מנהל לפי מאמן ('' = כל המאמנים)
   histView:'date',       // תצוגת היסטוריה: 'date' = לפי תאריך | 'member' = לפי חניך
   homeFilter:'',         // סינון סטטוס במסך הבית ('' = הכל)
@@ -594,10 +596,12 @@ function sessMini(status){ var m=SESS_META[status]; return '<span class="sess-mi
 
 var HOME_DATA = null;
 async function renderHome(){
+  if(STATE.role==='trainee'){ return renderTraineeHome(); }
   var who = STATE.role==='manager' ? 'מנהל' : (STATE.coachId ? coachName(STATE.coachId) : '');
   $('homeGreet').textContent = 'שלום' + (who ? ', '+who : '') + ' 👋';
   var nd = niceDate(todayISO());
   $('homeDate').textContent = nd.day + ' · ' + nd.num;
+  renderHomeAbsences();  // דיווחי היעדרות קרובים (מנהל/מאמן)
 
   var acts = '';
   if(STATE.role==='manager'){
@@ -788,7 +792,9 @@ async function init(){
     // שחזור תפקיד/משתמש
     var savedRole = localStorage.getItem('ttc_role');
     var savedCoach = localStorage.getItem('ttc_coach');
-    if(savedRole==='manager'){ STATE.role='manager'; STATE.coachId=null; }
+    var savedMember = localStorage.getItem('ttc_member');
+    if(savedRole==='manager'){ STATE.role='manager'; STATE.coachId=null; STATE.memberId=null; }
+    else if(savedRole==='trainee' && savedMember && STATE.data.members.some(function(m){return m.id===savedMember;})){ STATE.role='trainee'; STATE.memberId=savedMember; }
     else if(savedCoach && STATE.data.coaches.some(function(c){return c.id===savedCoach;})){ STATE.role='coach'; STATE.coachId=savedCoach; }
     else { STATE.role='coach'; STATE.coachId=null; }
     STATE.managerFilter = localStorage.getItem('ttc_mgrfilter')||'';
@@ -831,11 +837,18 @@ function updateChips(){
     chip.classList.add('admin');
     $('mgrFilterChip').style.display='flex';
     $('mgrFilterName').textContent = STATE.managerFilter ? coachName(STATE.managerFilter) : 'כל המאמנים';
+  }else if(STATE.role==='trainee'){
+    $('coachChipName').textContent = STATE.memberId ? nameOfMember(STATE.memberId) : 'בחר משתמש';
+    chip.classList.remove('admin');
+    $('mgrFilterChip').style.display='none';
   }else{
     $('coachChipName').textContent = STATE.coachId ? coachName(STATE.coachId) : 'בחר משתמש';
     chip.classList.remove('admin');
     $('mgrFilterChip').style.display='none';
   }
+  // מתאמן רואה רק את מסך הבית — מסתירים את שאר הטאבים
+  var t = (STATE.role==='trainee');
+  ['tab-attendance','tab-history','tab-manage'].forEach(function(id){ var b=$(id); if(b) b.style.display = t ? 'none' : 'flex'; });
 }
 
 function openCoachPicker(force){
@@ -848,19 +861,35 @@ function openCoachPicker(force){
   if(cs.length===0){
     body += '<div class="empty" style="padding:20px 8px"><div class="big">🎾</div>עדיין אין מאמנים. הוסיפו במסך "ניהול".</div>';
   }else{
+    body += '<div class="sub" style="margin:12px 2px 4px">מאמנים</div>';
     body += cs.map(function(c){
       var on = (STATE.role==='coach' && c.id===STATE.coachId);
       return '<div class="list-item" onclick="pickRole(\''+c.id+'\')" style="cursor:pointer">'+
              '<div class="avatar-wrap">'+avatar(c.name,'coach',c.id,'sm')+'<span class="aw-name">'+esc(c.name)+'</span></div>'+(on?'<span class="pill">נבחר</span>':'<span class="chev">‹</span>')+'</div>';
     }).join('');
   }
+  // מתאמנים
+  var ms = STATE.data.members.slice().sort(function(a,b){return a.name>b.name?1:-1;});
+  if(ms.length){
+    body += '<div class="sub" style="margin:12px 2px 4px">מתאמנים</div>';
+    body += ms.map(function(m){
+      var on = (STATE.role==='trainee' && m.id===STATE.memberId);
+      return '<div class="list-item" onclick="pickTrainee(\''+m.id+'\')" style="cursor:pointer">'+
+             '<div class="avatar-wrap">'+avatar(m.name,'member',m.id,'sm')+'<span class="aw-name">'+esc(m.name)+'</span></div>'+(on?'<span class="pill">נבחר</span>':'<span class="chev">‹</span>')+'</div>';
+    }).join('');
+  }
   if(!force) body += '<button class="btn secondary" style="margin-top:14px" onclick="closeModal()">סגירה</button>';
   openModal(body);
 }
 function pickRole(id){
-  if(id===MANAGER){ STATE.role='manager'; STATE.coachId=null; localStorage.setItem('ttc_role','manager'); }
-  else{ STATE.role='coach'; STATE.coachId=id; localStorage.setItem('ttc_role','coach'); localStorage.setItem('ttc_coach',id); }
-  updateChips(); closeModal(); refreshAll();
+  if(id===MANAGER){ STATE.role='manager'; STATE.coachId=null; STATE.memberId=null; localStorage.setItem('ttc_role','manager'); }
+  else{ STATE.role='coach'; STATE.coachId=id; STATE.memberId=null; localStorage.setItem('ttc_role','coach'); localStorage.setItem('ttc_coach',id); }
+  STATE.homeFilter=''; updateChips(); closeModal(); goHome();
+}
+function pickTrainee(mid){
+  STATE.role='trainee'; STATE.memberId=mid; STATE.coachId=null;
+  localStorage.setItem('ttc_role','trainee'); localStorage.setItem('ttc_member',mid);
+  updateChips(); closeModal(); goHome();
 }
 
 // סינון מנהל לפי מאמן (הצ׳יפ השמאלי)
@@ -914,6 +943,84 @@ function renderGroupsList(){
       '<div class="g-meta">'+esc(slotsLabel(g))+' · '+mCount+' חניכים</div></div></div>'+
       '<span class="chev">‹</span></div>';
   }).join('');
+}
+
+// ---------- דיווחי היעדרות (למנהל/מאמן במסך הבית) ----------
+async function renderHomeAbsences(){
+  var box=$('homeAbsences'); if(!box) return;
+  box.innerHTML='';
+  try{
+    var to = addDaysISO(todayISO(), 30);
+    var abs = await api('getAbsences',{from:todayISO(), to:to});
+    var vis = visibleGroupIdSet();
+    abs = abs.filter(function(a){ return STATE.role==='manager' ? (STATE.managerFilter ? vis[a.groupId] : true) : vis[a.groupId]; });
+    if(!abs.length) return;
+    abs.sort(function(a,b){ return a.date<b.date?-1:1; });
+    var rows = abs.map(function(a){ var nd=niceDate(a.date);
+      return '<div class="hrow"><div class="avatar-wrap">'+avatar(nameOfMember(a.memberId),'member',a.memberId,'sm')+
+        '<div class="aw-txt"><div class="aw-name">'+esc(nameOfMember(a.memberId))+'</div>'+
+        '<div class="aw-sub">'+esc(nd.day)+' '+esc(nd.num)+' · '+esc(groupLabel(a.groupId))+(a.note?' · '+esc(a.note):'')+'</div></div></div>'+
+        '<span class="sess-mini" style="color:var(--absent);background:#fdeaea">לא יגיע</span></div>'; }).join('');
+    box.innerHTML='<div class="card"><div class="date-head"><div class="dh-title">🔔 דיווחי היעדרות קרובים</div>'+
+      '<span class="dh-sum">'+abs.length+'</span></div>'+rows+
+      '<div class="sub" style="margin-top:8px">כדאי לברר עם המתאמן אם מגיע אימון חוזר.</div></div>';
+  }catch(e){ /* שקט אם נכשל */ }
+}
+
+// ---------- מסך בית של מתאמן ----------
+async function renderTraineeHome(){
+  var m = STATE.data.members.find(function(x){return x.id===STATE.memberId;});
+  $('homeGreet').textContent = 'שלום' + (m?', '+m.name:'') + ' 👋';
+  var nd = niceDate(todayISO());
+  $('homeDate').textContent = nd.day + ' · ' + nd.num;
+  $('homeBreakdown').innerHTML=''; $('homeCountNum').textContent=(m&&m.groupIds?m.groupIds.length:0);
+  $('homeCount').classList.add('active-all'); $('homeActions').innerHTML=''; $('homeAbsences').innerHTML='';
+  $('homeTodayTitle').textContent='🎾 הקבוצות שלי';
+  var el=$('homeToday');
+  if(!m || !(m.groupIds||[]).length){ el.innerHTML='<div class="empty"><div class="big">🎾</div>עדיין לא שויכת לקבוצה. פנה למנהל.</div>'; return; }
+  el.innerHTML='<div class="loader"><div class="spinner"></div></div>';
+  // דיווחי ההיעדרות שלי (כדי להציג "לא אגיע/אגיע")
+  var myAbs={};
+  try{ var abs=await api('getAbsences',{from:todayISO(), to:addDaysISO(todayISO(),60), memberId:m.id});
+    abs.forEach(function(a){ myAbs[a.groupId+'|'+a.date]=true; }); }catch(e){}
+  TRAINEE_ABS = myAbs;
+  el.innerHTML = (m.groupIds||[]).map(function(gid){
+    var g=STATE.data.groups.find(function(x){return x.id===gid;}); if(!g) return '';
+    var members = membersOfGroup(gid);
+    var memHtml = members.map(function(mm){ return '<div class="hrow"><div class="avatar-wrap">'+avatar(mm.name,'member',mm.id,'sm')+
+      '<span class="aw-name">'+esc(mm.name)+(mm.id===m.id?' <span class="pill">אני</span>':'')+'</span></div></div>'; }).join('');
+    return '<div class="card">'+
+      '<div class="avatar-wrap" style="margin-bottom:6px">'+avatar(coachName(g.coachId),'coach',g.coachId)+
+      '<div class="aw-txt"><div class="g-name">'+esc(g.name)+'</div><div class="g-coach">👤 '+esc(coachName(g.coachId))+'</div>'+
+      '<div class="g-meta">'+esc(slotsLabel(g))+'</div></div></div>'+
+      '<button class="btn secondary sm" style="margin:6px 0 10px" onclick="openTraineeAbsence(\''+gid+'\')">📅 דיווח: לא אגיע לתאריך</button>'+
+      '<div class="sub" style="margin-bottom:4px">חברי הקבוצה ('+members.length+'):</div>'+memHtml+'</div>';
+  }).join('');
+}
+var TRAINEE_ABS = {};
+// חלון דיווח היעדרות למתאמן
+function openTraineeAbsence(groupId){
+  var g=STATE.data.groups.find(function(x){return x.id===groupId;}); if(!g) return;
+  openModal('<h3>דיווח היעדרות</h3><p class="sub">'+esc(g.name)+' · '+esc(coachName(g.coachId))+'</p>'+
+    '<div class="lbl" style="font-size:13px;font-weight:600;margin-bottom:5px">לאיזה תאריך לא תגיע?</div>'+
+    makeupNavHtml()+
+    '<label class="fld" style="margin-top:12px"><span class="lbl">הערה (רשות)</span><input class="input" id="absNote" placeholder="למשל: מחלה"></label>'+
+    '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">חזרה</button>'+
+    '<button class="btn" style="background:var(--absent)" onclick="doReportAbsence(\''+groupId+'\')">שליחה</button></div>');
+  $('makeupDate').value = addDaysISO(todayISO(), slotNextOffset(g)); updateMakeupLabel();
+}
+// היסט לימים עד האימון הקרוב של הקבוצה (לנוחות ברירת מחדל)
+function slotNextOffset(g){
+  var today=new Date().getDay(); var best=7;
+  groupSlots(g).forEach(function(s){ var d=(Number(s.day)-today+7)%7; if(d===0) d=7; if(d<best) best=d; });
+  return best;
+}
+async function doReportAbsence(groupId){
+  var date=$('makeupDate').value; if(!date){ toast('בחרו תאריך','bad'); return; }
+  var note=$('absNote').value.trim();
+  try{ await api('reportAbsence',{date:date, groupId:groupId, memberId:STATE.memberId, note:note, by:nameOfMember(STATE.memberId)});
+    closeModal(); toast('הדיווח נשלח ✓','ok'); renderTraineeHome();
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
 }
 
 // ---------- סימון נוכחות ----------
