@@ -170,6 +170,14 @@
   .seg-tabs button.active{background:#fff; color:var(--green); box-shadow:var(--shadow);}
   .status-dot{display:inline-block; width:9px; height:9px; border-radius:50%; margin-left:6px;}
 
+  /* מסך התחברות */
+  .login-wrap{max-width:360px; margin:26px auto; background:#fff; border:1px solid var(--line); border-radius:18px; padding:24px 20px; box-shadow:var(--shadow); text-align:center;}
+  .login-ball{width:56px; height:56px; border-radius:50%; background:var(--lime); margin:2px auto 10px; position:relative;}
+  .login-ball::before,.login-ball::after{content:""; position:absolute; top:6px; bottom:6px; width:44px; border:2px solid #fff; border-radius:50%; left:50%; transform:translateX(-50%);}
+  .login-title{font-family:var(--font-head); font-size:22px; margin-bottom:4px;}
+  .login-sub{font-size:13px; color:var(--muted); margin-bottom:14px;}
+  .login-wrap .fld{text-align:right;}
+
   /* בורר תאריך נוח למסך הנוכחות */
   .date-nav{display:flex; align-items:stretch; gap:8px; margin-top:14px;}
   .date-arrow{flex:0 0 auto; width:48px; border:1.5px solid var(--line); background:#fff; color:var(--green-dark);
@@ -272,8 +280,8 @@
       <button class="chip filter" id="mgrFilterChip" style="display:none" onclick="openManagerFilter()">
         <span id="mgrFilterName">כל המאמנים</span> ▾
       </button>
-      <button class="chip" id="coachChip" onclick="openCoachPicker()">
-        <span id="coachChipName">בחר משתמש</span> ▾
+      <button class="chip" id="coachChip" onclick="openAccountMenu()">
+        <span id="coachChipName">משתמש</span> ▾
       </button>
     </div>
   </header>
@@ -299,6 +307,24 @@
     <div class="view" id="view-error">
       <div class="banner err" id="errText">אירעה שגיאה.</div>
       <button class="btn secondary" onclick="init()">נסה שוב</button>
+    </div>
+
+    <!-- מסך התחברות -->
+    <div class="view" id="view-login">
+      <div class="login-wrap">
+        <div class="login-ball"></div>
+        <div class="login-title">התחברות</div>
+        <div class="login-sub">מועדון טניס · נוכחות</div>
+        <div class="seg-tabs">
+          <button id="lg-staff" class="active" onclick="setLoginMode('staff')">צוות</button>
+          <button id="lg-trainee" onclick="setLoginMode('trainee')">מתאמנים</button>
+        </div>
+        <label class="fld"><span class="lbl">שם</span><select class="input" id="loginName"></select></label>
+        <label class="fld"><span class="lbl" id="loginPassLbl">סיסמה</span>
+          <input class="input" type="password" id="loginPass" placeholder="הזינו סיסמה" autocomplete="off"></label>
+        <button class="btn" onclick="doLogin()">התחבר</button>
+        <div id="loginMsg" style="margin-top:10px"></div>
+      </div>
     </div>
 
     <!-- בית / דשבורד -->
@@ -405,6 +431,7 @@
         <button id="mt-groups" class="active" onclick="switchManageTab('groups')">קבוצות</button>
         <button id="mt-members" onclick="switchManageTab('members')">חניכים</button>
         <button id="mt-coaches" onclick="switchManageTab('coaches')">מאמנים</button>
+        <button id="mt-users" onclick="switchManageTab('users')">משתמשים</button>
       </div>
 
       <div id="manage-groups">
@@ -421,6 +448,11 @@
       <div id="manage-coaches" style="display:none">
         <button class="btn" style="margin-bottom:12px" onclick="openCoachModal()">➕ מאמן חדש</button>
         <div class="card" id="coachesManageList"></div>
+      </div>
+
+      <div id="manage-users" style="display:none">
+        <button class="btn" style="margin-bottom:12px" onclick="openUserModal()">➕ משתמש חדש</button>
+        <div class="card" id="usersManageList"></div>
       </div>
     </div>
   </main>
@@ -782,32 +814,96 @@ async function restoreSession(groupId){
   }catch(e){ toast('שגיאה: '+e.message,'bad'); }
 }
 
-// ---------- אתחול ----------
+// ---------- אתחול + התחברות ----------
+var LOGIN_USERS = [];
+var LOGIN_MODE = 'staff';
 async function init(){
   show('loading');
   $('tabbar').style.display='none';
   if(!getApiUrl()){ show('setup'); return; }
   try{
     STATE.data = await api('getAll');
-    // שחזור תפקיד/משתמש
-    var savedRole = localStorage.getItem('ttc_role');
-    var savedCoach = localStorage.getItem('ttc_coach');
-    var savedMember = localStorage.getItem('ttc_member');
-    if(savedRole==='manager'){ STATE.role='manager'; STATE.coachId=null; STATE.memberId=null; }
-    else if(savedRole==='trainee' && savedMember && STATE.data.members.some(function(m){return m.id===savedMember;})){ STATE.role='trainee'; STATE.memberId=savedMember; }
-    else if(savedCoach && STATE.data.coaches.some(function(c){return c.id===savedCoach;})){ STATE.role='coach'; STATE.coachId=savedCoach; }
-    else { STATE.role='coach'; STATE.coachId=null; }
+    try{ LOGIN_USERS = await api('getUsers'); }catch(e){ LOGIN_USERS = []; }  // ידרוש פריסה מחדש של Code.gs
     STATE.managerFilter = localStorage.getItem('ttc_mgrfilter')||'';
-
-    updateChips();
-    $('tabbar').style.display='flex';
-    refreshAll();
-    goHome();
-    if(STATE.role==='coach' && !STATE.coachId) openCoachPicker(true);
+    // שחזור סשן קיים
+    var sess = null; try{ sess = JSON.parse(localStorage.getItem('ttc_session')||'null'); }catch(e){}
+    if(sess && sess.role && sessionValid(sess)){ enterApp(sess); return; }
+    showLogin();
   }catch(err){
     $('errText').textContent = 'שגיאה בטעינת הנתונים: ' + err.message;
     show('error');
   }
+}
+// בדיקת תקינות סשן מול הנתונים הנוכחיים
+function sessionValid(s){
+  if(s.role==='manager') return true;
+  if(s.role==='coach') return STATE.data.coaches.some(function(c){return c.id===s.coachId;});
+  if(s.role==='trainee') return STATE.data.members.some(function(m){return m.id===s.memberId;});
+  return false;
+}
+function enterApp(sess){
+  STATE.role=sess.role; STATE.coachId=sess.coachId||null; STATE.memberId=sess.memberId||null; STATE.loginName=sess.name||'';
+  updateChips();
+  $('tabbar').style.display='flex';
+  refreshAll();
+  goHome();
+}
+function showLogin(){
+  $('tabbar').style.display='none';
+  setLoginMode(LOGIN_MODE);
+  $('loginMsg').innerHTML='';
+  if($('loginPass')) $('loginPass').value='';
+  show('login');
+}
+function loginNamesFor(mode){
+  var roles = (mode==='trainee') ? ['trainee'] : ['manager','coach'];
+  var us = (LOGIN_USERS||[]).filter(function(u){ return roles.indexOf(u.role)>=0; });
+  // גיבוי אם getUsers לא זמין (Code.gs לא פורס מחדש): מרכיבים מ-getAll
+  if(!us.length){
+    if(mode==='trainee') us = STATE.data.members.map(function(m){return {name:m.name,role:'trainee',hasPassword:false};});
+    else us = [{name:'מנהל',role:'manager',hasPassword:true}].concat(STATE.data.coaches.map(function(c){return {name:c.name,role:'coach',hasPassword:true};}));
+  }
+  return us;
+}
+function setLoginMode(mode){
+  LOGIN_MODE = mode;
+  $('lg-staff').classList.toggle('active', mode==='staff');
+  $('lg-trainee').classList.toggle('active', mode==='trainee');
+  var us = loginNamesFor(mode);
+  $('loginName').innerHTML = us.map(function(u){ return '<option value="'+esc(u.name)+'">'+esc(u.name)+'</option>'; }).join('') || '<option value="">— אין —</option>';
+  $('loginPassLbl').textContent = (mode==='trainee') ? 'סיסמה (רשות)' : 'סיסמה';
+  $('loginMsg').innerHTML='';
+}
+async function doLogin(){
+  var name = $('loginName').value;
+  var password = $('loginPass').value;
+  if(!name){ $('loginMsg').innerHTML='<div class="banner err">נא לבחור שם</div>'; return; }
+  $('loginMsg').innerHTML='<div class="sub">מתחבר…</div>';
+  try{
+    var u = await api('login',{name:name, mode:LOGIN_MODE, password:password});
+    var sess = {role:u.role, coachId:u.coachId||null, memberId:u.memberId||null, name:u.name};
+    localStorage.setItem('ttc_session', JSON.stringify(sess));
+    STATE.homeFilter=''; STATE.managerFilter=''; localStorage.setItem('ttc_mgrfilter','');
+    enterApp(sess);
+  }catch(e){
+    $('loginMsg').innerHTML='<div class="banner err">'+esc(e.message)+'</div>';
+  }
+}
+function logout(){
+  localStorage.removeItem('ttc_session');
+  STATE.role='coach'; STATE.coachId=null; STATE.memberId=null; STATE.loginName='';
+  closeModal();
+  showLogin();
+}
+// תפריט חשבון (הצ׳יפ הימני) — מציג מי מחובר + התנתקות
+function openAccountMenu(){
+  var who = STATE.role==='manager' ? 'מנהל' : (STATE.role==='trainee' ? nameOfMember(STATE.memberId) : coachName(STATE.coachId));
+  var roleHe = STATE.role==='manager' ? 'מנהל' : (STATE.role==='trainee' ? 'מתאמן' : 'מאמן');
+  openModal('<h3>החשבון שלי</h3>'+
+    '<div class="list-item"><div class="avatar-wrap">'+avatar(who, STATE.role==='trainee'?'member':'coach', STATE.coachId||STATE.memberId||who)+
+    '<div class="aw-txt"><div class="aw-name">'+esc(who)+'</div><div class="aw-sub">'+roleHe+'</div></div></div></div>'+
+    '<div class="modal-actions" style="margin-top:14px"><button class="btn secondary" onclick="closeModal()">סגירה</button>'+
+    '<button class="btn" style="background:var(--absent)" onclick="logout()">🚪 התנתקות</button></div>');
 }
 
 function refreshAll(){
@@ -849,6 +945,8 @@ function updateChips(){
   // מתאמן רואה רק את מסך הבית — מסתירים את שאר הטאבים
   var t = (STATE.role==='trainee');
   ['tab-attendance','tab-history','tab-manage'].forEach(function(id){ var b=$(id); if(b) b.style.display = t ? 'none' : 'flex'; });
+  // לשונית "משתמשים" בניהול — למנהל בלבד
+  var mu=$('mt-users'); if(mu) mu.style.display = (STATE.role==='manager') ? 'flex' : 'none';
 }
 
 function openCoachPicker(force){
@@ -1025,7 +1123,7 @@ async function doReportAbsence(groupId){
 
 // ---------- סימון נוכחות ----------
 async function openMark(groupId){
-  if(STATE.role==='coach' && !STATE.coachId){ openCoachPicker(true); return; }
+  if(STATE.role==='coach' && !STATE.coachId){ return; }
   var g = STATE.data.groups.find(function(x){return x.id===groupId;});
   if(!g) return;
   STATE.currentGroup = g;
@@ -1122,13 +1220,70 @@ function closeModal(){ $('modalBack').classList.remove('open'); }
 
 // ---------- ניהול: לשוניות ----------
 function switchManageTab(t){
-  ['groups','members','coaches'].forEach(function(x){
+  ['groups','members','coaches','users'].forEach(function(x){
     $('manage-'+x).style.display = (x===t)?'block':'none';
     $('mt-'+x).classList.toggle('active', x===t);
   });
   if(t==='groups') renderGroupsManage();
   if(t==='members'){ populateMemberFilter(); renderMembersManage(); }
   if(t==='coaches') renderCoachesManage();
+  if(t==='users') renderUsersManage();
+}
+
+// ---------- ניהול משתמשים / הרשאות (מנהל בלבד) ----------
+var ROLE_HE = {manager:'מנהל', coach:'מאמן', trainee:'מתאמן'};
+async function refreshUsers(){ try{ LOGIN_USERS = await api('getUsers'); }catch(e){} }
+function renderUsersManage(){
+  var el=$('usersManageList');
+  if(STATE.role!=='manager'){ el.innerHTML='<div class="empty">ניהול משתמשים זמין למנהל בלבד.</div>'; $('manage-users').querySelector('.btn')&&($('manage-users').querySelector('.btn').style.display='none'); return; }
+  var mb=$('manage-users').querySelector('.btn'); if(mb) mb.style.display='flex';
+  var us=(LOGIN_USERS||[]).slice().sort(function(a,b){ return (a.role>b.role?1:-1) || (a.name>b.name?1:-1); });
+  if(!us.length){ el.innerHTML='<div class="empty">אין משתמשים. (ודאו שפרסתם מחדש את Code.gs.)</div>'; return; }
+  el.innerHTML = us.map(function(u){
+    var isCoach=(u.role==='coach'), isMgr=(u.role==='manager');
+    return '<div class="list-item"><div class="avatar-wrap">'+avatar(u.name, isCoach||isMgr?'coach':'member', u.refId||u.name,'sm')+
+      '<div class="aw-txt"><div class="aw-name">'+esc(u.name)+' <span class="pill coach">'+esc(ROLE_HE[u.role]||u.role)+'</span></div>'+
+      '<div class="aw-sub">'+(u.hasPassword?'🔒 מוגן בסיסמה':'🔓 ללא סיסמה')+'</div></div></div>'+
+      '<div class="mini-actions"><button class="icon-btn" title="סיסמה" onclick="openSetPassword(\''+u.id+'\',\''+esc(u.name).replace(/\x27/g,"")+'\')">🔑</button>'+
+      '<button class="icon-btn danger" onclick="confirmDeleteUser(\''+u.id+'\')">🗑️</button></div></div>';
+  }).join('');
+}
+function openUserModal(){
+  openModal('<h3>משתמש חדש</h3>'+
+    '<label class="fld"><span class="lbl">שם</span><input class="input" id="uName" placeholder="שם מלא"></label>'+
+    '<label class="fld"><span class="lbl">תפקיד</span><select class="input" id="uRole">'+
+      '<option value="coach">מאמן</option><option value="trainee">מתאמן</option><option value="manager">מנהל</option></select></label>'+
+    '<label class="fld"><span class="lbl">סיסמה (רשות)</span><input class="input" id="uPass" placeholder="השאירו ריק לכניסה ללא סיסמה"></label>'+
+    '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">ביטול</button>'+
+    '<button class="btn" onclick="saveUser()">שמירה</button></div>');
+}
+async function saveUser(){
+  var name=$('uName').value.trim(); if(!name){ toast('נא להזין שם','bad'); return; }
+  try{ await api('addUser',{name:name, role:$('uRole').value, password:$('uPass').value});
+    await refreshUsers(); STATE.data = await api('getAll');  // ריענון (אולי נוצר מאמן/חניך)
+    closeModal(); renderUsersManage(); populateSelects(); toast('נשמר ✓','ok');
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
+}
+function openSetPassword(id,name){
+  openModal('<h3>סיסמה — '+esc(name)+'</h3>'+
+    '<label class="fld"><span class="lbl">סיסמה חדשה (ריק = ללא סיסמה)</span><input class="input" id="spPass" placeholder="סיסמה"></label>'+
+    '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">ביטול</button>'+
+    '<button class="btn" onclick="doSetPassword(\''+id+'\')">שמירה</button></div>');
+}
+async function doSetPassword(id){
+  try{ await api('setUserPassword',{id:id, password:$('spPass').value});
+    await refreshUsers(); closeModal(); renderUsersManage(); toast('הסיסמה עודכנה ✓','ok');
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
+}
+function confirmDeleteUser(id){
+  var u=(LOGIN_USERS||[]).find(function(x){return x.id===id;});
+  openModal('<h3>מחיקת משתמש</h3><p>למחוק את המשתמש "'+esc(u?u.name:'')+'"? (רשומת המאמן/חניך עצמה נשארת — רק ההתחברות תוסר.)</p>'+
+    '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">ביטול</button>'+
+    '<button class="btn" style="background:var(--absent)" onclick="doDeleteUser(\''+id+'\')">מחיקה</button></div>');
+}
+async function doDeleteUser(id){
+  try{ await api('deleteUser',{id:id}); await refreshUsers(); closeModal(); renderUsersManage(); toast('נמחק','ok');
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
 }
 
 // ---------- ניהול קבוצות ----------
