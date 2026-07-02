@@ -269,6 +269,9 @@
   /* צ׳יפ סטטוס מפגש */
   .sess-mini{display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:800; padding:3px 8px; border-radius:999px;}
   .coach-chips{display:flex; gap:5px; flex-wrap:wrap; flex:0 0 auto;}
+  .miss-alert{width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:right; margin-bottom:14px; padding:12px 14px; border:none; border-radius:14px; background:#fdeede; color:#B4530A; font-family:inherit; font-weight:800; font-size:14px; cursor:pointer; box-shadow:inset 0 0 0 1px #f6d3ad;}
+  .miss-alert:active{transform:scale(.99);}
+  .miss-alert .ma-go{font-weight:800; white-space:nowrap; opacity:.85;}
   .live-pulse{width:8px; height:8px; border-radius:50%; background:var(--late); box-shadow:0 0 0 0 rgba(224,147,15,.6); animation:pulse 1.4s infinite;}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(224,147,15,.5);}70%{box-shadow:0 0 0 7px rgba(224,147,15,0);}100%{box-shadow:0 0 0 0 rgba(224,147,15,0);}}
   .sess-row{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 2px; border-bottom:1px solid var(--line);}
@@ -352,6 +355,7 @@
         </div>
         <div class="hero-breakdown" id="homeBreakdown"></div>
       </div>
+      <div id="homeReminder"></div>
       <h2 class="section" id="homeTodayTitle">🎾 המפגשים של היום</h2>
       <div id="homeToday" style="margin-bottom:16px"></div>
       <div id="homeAbsences" style="margin-bottom:16px"></div>
@@ -630,17 +634,21 @@ var SESS_META = {
   done:    {label:'בוצע',        color:'var(--present)', bg:'#e6f6ee'},
   ongoing: {label:'מתרחש כרגע',  color:'var(--late)',    bg:'#fdf2e0'},
   upcoming:{label:'טרם התחיל',   color:'var(--muted)',   bg:'#eef1ef'},
+  missed:  {label:'ללא נוכחות',   color:'#B4530A',        bg:'#fdeede'},
   canceled:{label:'בוטל',        color:'var(--absent)',  bg:'#fdeaea'}
 };
 // נקודות בהירות לצ׳יפים על הרקע הירוק בכותרת (נראות טובה)
-var HERO_DOT = { done:'#7CE0A3', ongoing:'#ffb454', upcoming:'#dfe7e2', canceled:'#ff7b7b' };
+var HERO_DOT = { done:'#7CE0A3', ongoing:'#ffb454', upcoming:'#dfe7e2', missed:'#ff9d4d', canceled:'#ff7b7b' };
 var SESSION_MIN = 60; // משך אימון: שעה
 function nowMinutes(){ var d=new Date(); return d.getHours()*60 + d.getMinutes(); }
 function timeToMin(t){ t=fmtTime(t); var p=String(t).split(':'); return (Number(p[0])||0)*60 + (Number(p[1])||0); }
 function sessionStatusT(gid, time, markedSet, canceledSet){
   if(canceledSet[gid]) return 'canceled';
   if(markedSet[gid]) return 'done';
-  return nowMinutes() >= timeToMin(time) ? 'ongoing' : 'upcoming';
+  var n=nowMinutes(), s=timeToMin(time);
+  if(n < s) return 'upcoming';           // טרם התחיל
+  if(n < s + SESSION_MIN) return 'ongoing'; // מתרחש כרגע (חלון האימון)
+  return 'missed';                        // הסתיים והמאמן לא מילא נוכחות
 }
 function isLiveT(time){ var s=timeToMin(time), n=nowMinutes(); return n>=s && n<s+SESSION_MIN; }
 function sessMini(status){ var m=SESS_META[status]; return '<span class="sess-mini" style="color:'+m.color+';background:'+m.bg+'"><span class="dot" style="background:'+m.color+'"></span>'+m.label+'</span>'; }
@@ -673,7 +681,7 @@ async function renderHome(){
   });
   var el = $('homeToday');
   if(todays.length===0){
-    HOME_DATA=null; $('homeCountNum').textContent='0'; $('homeBreakdown').innerHTML='';
+    HOME_DATA=null; $('homeCountNum').textContent='0'; $('homeBreakdown').innerHTML=''; $('homeReminder').innerHTML='';
     $('homeCount').classList.add('active-all');
     el.innerHTML='<div class="empty"><div class="big">🎾</div>אין מפגשים היום. נתראה בפעם הבאה!</div>';
     return;
@@ -697,11 +705,18 @@ function statusOf(e){ return sessionStatusT(e.g.id, e.time, HOME_DATA.markedSet,
 function setHomeFilter(k){ STATE.homeFilter = (STATE.homeFilter===k)?'':k; renderHomeList(); }
 function renderHomeList(){
   var d = HOME_DATA; if(!d) return;
-  var order=['done','ongoing','upcoming','canceled'];
-  var counts={done:0,ongoing:0,upcoming:0,canceled:0};
+  var order=['done','ongoing','upcoming','missed','canceled'];
+  var counts={done:0,ongoing:0,upcoming:0,missed:0,canceled:0};
   d.todays.forEach(function(e){ counts[statusOf(e)]++; });
   $('homeCountNum').textContent = d.todays.length;
   $('homeCount').classList.toggle('active-all', !STATE.homeFilter);
+  // תזכורת/דיווח: אימונים שהסתיימו ללא מילוי נוכחות
+  if(counts.missed>0){
+    var msg = STATE.role==='manager'
+      ? '⚠ '+counts.missed+' אימונים הסתיימו היום ללא מילוי נוכחות'
+      : '⏰ תזכורת: '+counts.missed+' אימונים הסתיימו ולא מילאת נוכחות — יש למלא';
+    $('homeReminder').innerHTML = '<button class="miss-alert" onclick="setHomeFilter(\'missed\')">'+msg+' <span class="ma-go">הצג ›</span></button>';
+  } else { $('homeReminder').innerHTML=''; }
   // צ׳יפים לחיצים לסינון
   $('homeBreakdown').innerHTML = order.map(function(k){ var m=SESS_META[k];
     var dc = (STATE.homeFilter===k) ? m.color : HERO_DOT[k];   // צ׳יפ פעיל=לבן→נקודה כהה; אחרת נקודה בהירה
@@ -716,7 +731,7 @@ function renderHomeList(){
   var coachIds=Object.keys(byCoach).sort(function(a,b){ return coachName(a)>coachName(b)?1:-1; });
   el.innerHTML = coachIds.map(function(cid){
     var list=byCoach[cid].slice().sort(function(a,b){ return timeToMin(a.time)-timeToMin(b.time); });
-    var cc={done:0,ongoing:0,upcoming:0,canceled:0};
+    var cc={done:0,ongoing:0,upcoming:0,missed:0,canceled:0};
     list.forEach(function(e){ cc[statusOf(e)]++; });
     var chips=order.filter(function(k){return cc[k]>0;}).map(function(k){ var m=SESS_META[k]; return '<span class="sess-mini" style="color:'+m.color+';background:'+m.bg+'">'+cc[k]+' '+m.label+'</span>'; }).join('');
     var detail=list.map(function(e){
@@ -1102,7 +1117,7 @@ async function renderTraineeHome(){
   var nd = niceDate(todayISO());
   $('homeDate').textContent = nd.day + ' · ' + nd.num;
   $('homeBreakdown').innerHTML=''; $('homeCountNum').textContent=(m&&m.groupIds?m.groupIds.length:0);
-  $('homeCount').classList.add('active-all'); $('homeActions').innerHTML=''; $('homeAbsences').innerHTML='';
+  $('homeCount').classList.add('active-all'); $('homeActions').innerHTML=''; $('homeAbsences').innerHTML=''; $('homeReminder').innerHTML='';
   $('homeTodayTitle').textContent='🎾 הקבוצות שלי';
   var el=$('homeToday');
   if(!m || !(m.groupIds||[]).length){ el.innerHTML='<div class="empty"><div class="big">🎾</div>עדיין לא שויכת לקבוצה. פנה למנהל.</div>'; return; }
