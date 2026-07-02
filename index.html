@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0f7a45">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="נוכחות טניס">
+<title>נוכחות — מועדון טניס</title>
+
+<!-- אייקון האפליקציה (SVG מוטמע) -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='46' fill='%23c9e94b'/%3E%3Cpath d='M18 22 A60 60 0 0 1 18 78 M82 22 A60 60 0 0 0 82 78' stroke='white' stroke-width='5' fill='none'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%23c9e94b'/%3E%3C/svg%3E">
+
+<!-- מניפסט PWA מוטמע (self-contained) -->
+<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22%D7%A0%D7%95%D7%9B%D7%97%D7%95%D7%AA%20%D7%98%D7%A0%D7%99%D7%A1%22%2C%22short_name%22%3A%22%D7%A0%D7%95%D7%9B%D7%97%D7%95%D7%AA%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23f3f6f4%22%2C%22theme_color%22%3A%22%230f7a45%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%253D%2527http%253A%252F%252Fwww.w3.org%252F2000%252Fsvg%2527%2520viewBox%253D%25270%25200%2520100%2520100%2527%253E%253Ccircle%2520cx%253D%252750%2527%2520cy%253D%252750%2527%2520r%253D%252750%2527%2520fill%253D%2527%2523c9e94b%2527%252F%253E%253C%252Fsvg%253E%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%2C%22purpose%22%3A%22any%22%7D%5D%7D">
+
+<!-- גופנים ספורטיביים (Rubik לכותרות, Heebo לגוף) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&family=Rubik:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+
+<!-- SheetJS לייצוא לאקסל -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+  :root{
+    /* צבעי טניס — מגרש דשא/קשיח (ירוק), כדור (צהוב־זרחני), חימר (כתום), מגרש קשיח (כחול) */
+    /* מערכת עיצוב A — מקצועי מרוסן: ירוק מותג אחד + ניטרלי סלייט, מבטא צהוב זעיר */
+    --green:#0E7A46; --green-dark:#0A5836;
+    --lime:#D7F205; --lime-soft:#F2F9CE;          /* מבטא צהוב כדור — שימוש זעיר בלבד */
+    --clay:#C2592F; --hard:#2C6E8F;               /* לשימוש סמנטי בלבד */
+    --bg:#F3F5F5; --card:#ffffff; --surface-2:#EEF2F0;
+    --ink:#14231C; --muted:#64748B; --line:#E5E9EC;
+    --present:#12995B; --absent:#D64545; --late:#C2592F; --admin:#7b52c9;
+    --shadow:0 2px 8px rgba(16,42,28,.06); --r:14px;
+    --font-body:'Heebo','Segoe UI',Arial,sans-serif;
+    --font-head:'Rubik','Segoe UI',Arial,sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0;}
+  body{
+    font-family:var(--font-body);
+    background:var(--bg); color:var(--ink); line-height:1.6;
+    -webkit-font-smoothing:antialiased; overscroll-behavior-y:contain;
+  }
+  button{font-family:inherit; cursor:pointer; border:none; background:none; color:inherit;}
+  input,select,textarea{font-family:var(--font-body); font-size:16px;}
+  /* כותרות ותוויות ספורטיביות ב-Rubik */
+  header .title, h2.section, .modal h3, .hh-greet, .g-name, .dh-title, .date-num,
+  .btn, nav.tabbar button, .badge-today, .aw-name, .cnt, .avatar{font-family:var(--font-head);}
+  h2.section{letter-spacing:-.2px;}
+
+  #app{max-width:520px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column;}
+  header{
+    background:var(--green-dark);
+    color:#fff; padding:calc(env(safe-area-inset-top,0) + 12px) 14px 12px;
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    position:sticky; top:0; z-index:20;
+  }
+  header .title{display:flex; align-items:center; gap:8px; font-weight:700; font-size:17px; flex:0 0 auto;}
+  header .ball{width:24px; height:24px; border-radius:50%; background:var(--lime); position:relative; flex:0 0 auto;}
+  header .ball::before,header .ball::after{content:""; position:absolute; top:2px; bottom:2px; width:18px;
+    border:2px solid #fff; border-radius:50%; left:50%; transform:translateX(-50%);}
+  .hdr-chips{display:flex; gap:7px; align-items:center; min-width:0;}
+  .chip{
+    background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.35);
+    color:#fff; border-radius:999px; padding:6px 11px; font-size:12.5px; font-weight:600;
+    display:flex; align-items:center; gap:5px; max-width:135px;
+  }
+  .chip span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .chip.admin{background:rgba(255,255,255,.9); color:var(--admin);}
+  .chip.filter{background:var(--lime); color:var(--green-dark); border-color:var(--lime);}
+
+  main{flex:1; padding:16px 14px 92px;}
+  .view{display:none; animation:fade .2s ease;}
+  .view.active{display:block;}
+  @keyframes fade{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;}}
+
+  h2.section{font-size:16px; margin:2px 0 12px; display:flex; align-items:center; gap:8px;}
+  .sub{color:var(--muted); font-size:13px;}
+
+  .card{background:var(--card); border-radius:var(--r); box-shadow:var(--shadow); padding:14px; margin-bottom:12px;}
+  .group-card{display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer;
+    border:2px solid transparent; transition:.15s;}
+  .group-card:active{transform:scale(.99);}
+  .group-card.today{border-color:#bfe0cd; background:#f2f9f5;}
+  .group-card .g-main{min-width:0;}
+  .group-card .g-name{font-weight:700; font-size:16px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .group-card .g-coach{font-size:13px; color:var(--green-dark); font-weight:600;}
+  .group-card .g-meta{font-size:12.5px; color:var(--muted); margin-top:2px;}
+  .badge-today{background:var(--lime); color:#0A5836; font-size:11px; font-weight:800; padding:3px 9px; border-radius:999px; flex:0 0 auto;}
+  .chev{color:var(--muted); font-size:20px; flex:0 0 auto;}
+
+  .pill{display:inline-block; font-size:12px; padding:2px 9px; border-radius:999px; background:var(--lime-soft); color:var(--green-dark); font-weight:600;}
+  .pill.coach{background:#eef1ef; color:var(--green-dark);}
+
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:7px;
+    background:var(--green); color:#fff; border-radius:12px; padding:13px 16px; font-weight:700; font-size:15px; width:100%;}
+  .btn:active{background:var(--green-dark);}
+  .btn.secondary{background:#eef1ef; color:var(--ink);}
+  .btn.ghost{background:transparent; color:var(--green); border:1.5px solid var(--green);}
+  .btn.sm{width:auto; padding:9px 14px; font-size:14px;}
+  .btn:disabled{opacity:.5;}
+
+  label.fld{display:block; margin-bottom:12px;}
+  label.fld .lbl{font-size:13px; font-weight:600; margin-bottom:5px; display:block; color:var(--ink);}
+  .input, select.input{width:100%; padding:12px; border:1.5px solid var(--line); border-radius:11px; background:#fff;}
+  .input:focus, select.input:focus{outline:none; border-color:var(--green);}
+  .row2{display:flex; gap:10px;} .row2>*{flex:1;}
+
+  .chk-box{max-height:230px; overflow:auto; border:1.5px solid var(--line); border-radius:11px; padding:4px; margin-bottom:12px;}
+  .chk-row{display:flex; align-items:center; gap:9px; padding:9px 8px; border-bottom:1px solid var(--line); cursor:pointer;}
+  .chk-row:last-child{border-bottom:none;}
+  .chk-row input{width:19px; height:19px; accent-color:var(--green); flex:0 0 auto;}
+  .chk-row .t{min-width:0;}
+  .chk-row .t b{display:block; font-size:14px;}
+  .chk-row .t small{color:var(--muted);}
+
+  .att-row{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:11px 4px; border-bottom:1px solid var(--line);}
+  .att-row:last-child{border-bottom:none;}
+  .att-name{font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .seg{display:flex; gap:5px; flex:0 0 auto;}
+  .seg button{border:1.5px solid var(--line); background:#fff; color:var(--muted); border-radius:9px; padding:7px 10px; font-size:13px; font-weight:700; min-width:44px;}
+  .seg button.on-present{background:var(--present); border-color:var(--present); color:#fff;}
+  .seg button.on-absent{background:var(--absent); border-color:var(--absent); color:#fff;}
+  .seg button.on-late{background:var(--late); border-color:var(--late); color:#fff;}
+
+  nav.tabbar{position:fixed; bottom:0; left:0; right:0; max-width:520px; margin:0 auto; background:#fff;
+    border-top:1px solid var(--line); display:flex; padding:6px 6px calc(env(safe-area-inset-bottom,0) + 6px); z-index:20;}
+  nav.tabbar button{flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; padding:6px 0; color:var(--muted); font-size:11px; font-weight:600; border-radius:12px;}
+  nav.tabbar button.active{color:var(--green);}
+  nav.tabbar .ic{font-size:21px; line-height:1;}
+
+  .modal-back{position:fixed; inset:0; background:rgba(15,25,20,.5); display:none; align-items:flex-end; justify-content:center; z-index:40;}
+  .modal-back.open{display:flex;}
+  .modal{background:#fff; width:100%; max-width:520px; border-radius:20px 20px 0 0; padding:18px 16px calc(env(safe-area-inset-bottom,0) + 18px); animation:up .25s ease; max-height:88vh; overflow:auto;}
+  @keyframes up{from{transform:translateY(30px); opacity:.6;} to{transform:none; opacity:1;}}
+  .modal h3{margin:0 0 14px; font-size:17px;}
+  .modal-actions{display:flex; gap:10px; margin-top:6px;}
+  .modal-actions .btn{flex:1;}
+
+  .empty{text-align:center; color:var(--muted); padding:34px 16px;}
+  .empty .big{font-size:40px; margin-bottom:8px;}
+  .loader{display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 0; color:var(--muted);}
+  .spinner{width:38px; height:38px; border:4px solid var(--line); border-top-color:var(--green); border-radius:50%; animation:spin 1s linear infinite; margin-bottom:12px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .banner{padding:12px 14px; border-radius:12px; font-size:14px; margin-bottom:12px;}
+  .banner.err{background:#fdeaea; color:#a02222; border:1px solid #f3caca;}
+  .banner.info{background:var(--lime-soft); color:var(--green-dark);}
+
+  #toast{position:fixed; bottom:96px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--ink); color:#fff;
+    padding:12px 18px; border-radius:12px; font-weight:600; font-size:14px; opacity:0; pointer-events:none; transition:.25s; z-index:60; max-width:90%;}
+  #toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+  #toast.ok{background:var(--present);} #toast.bad{background:var(--absent);}
+
+  .tbl{width:100%; border-collapse:collapse; font-size:14px;}
+  .tbl th,.tbl td{padding:9px 8px; text-align:right; border-bottom:1px solid var(--line);}
+  .tbl th{color:var(--muted); font-weight:700; font-size:12px;}
+  .tbl td.num{font-variant-numeric:tabular-nums; font-weight:700;}
+  .list-item{display:flex; justify-content:space-between; align-items:center; padding:11px 4px; border-bottom:1px solid var(--line); gap:8px;}
+  .list-item:last-child{border:none;}
+  .mini-actions{display:flex; gap:6px; flex:0 0 auto;}
+  .icon-btn{width:34px; height:34px; border-radius:9px; background:#eef1ef; display:flex; align-items:center; justify-content:center; font-size:15px;}
+  .icon-btn.danger{background:#fdeaea; color:var(--absent);}
+  .seg-tabs{display:flex; gap:6px; background:#eef1ef; padding:4px; border-radius:12px; margin-bottom:14px;}
+  .seg-tabs button{flex:1; padding:9px; border-radius:9px; font-weight:700; font-size:13px; color:var(--muted);}
+  .seg-tabs button.active{background:#fff; color:var(--green); box-shadow:var(--shadow);}
+  .status-dot{display:inline-block; width:9px; height:9px; border-radius:50%; margin-left:6px;}
+
+  /* בורר תאריך נוח למסך הנוכחות */
+  .date-nav{display:flex; align-items:stretch; gap:8px; margin-top:14px;}
+  .date-arrow{flex:0 0 auto; width:48px; border:1.5px solid var(--line); background:#fff; color:var(--green-dark);
+    border-radius:12px; font-size:24px; font-weight:700; display:flex; align-items:center; justify-content:center; transition:.12s;}
+  .date-arrow:active{transform:scale(.94); background:var(--lime-soft);}
+  .date-field{flex:1; min-width:0; position:relative; border:1.5px solid var(--line); border-radius:12px;
+    background:#fff; padding:8px 34px; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; transition:.12s;}
+  .date-field:active{background:var(--lime-soft);}
+  .date-field:focus-within{border-color:var(--green);}
+  .date-field .date-day{font-size:13px; color:var(--muted); font-weight:600;}
+  .date-field .date-num{font-size:19px; font-weight:800; color:var(--ink); font-variant-numeric:tabular-nums; letter-spacing:.5px;}
+  .date-field .date-cal{position:absolute; left:12px; top:50%; transform:translateY(-50%); font-size:16px; opacity:.6; pointer-events:none;}
+  .date-hidden{position:absolute; left:12px; bottom:6px; width:1px; height:1px; opacity:0; border:none; padding:0; pointer-events:none;}
+  .today-btn{width:100%; margin-top:10px;}
+  .today-btn.is-today{opacity:.45; pointer-events:none;}
+
+  /* כפתורי סטטוס גדולים יותר וברורים למגע */
+  .att-row{padding:13px 4px;}
+  .seg button{min-width:56px; padding:10px 12px; font-size:14px; transition:transform .1s, background .1s;}
+  .seg button:active{transform:scale(.93);}
+
+  /* אווטארים — עיגול ראשי־תיבות. מאמן = ירוק עם טבעת ליים; חניך = צבע רך לפי שם */
+  .avatar{width:38px; height:38px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center;
+    font-weight:800; font-size:14px; line-height:1; flex:0 0 auto;}
+  .avatar.sm{width:30px; height:30px; font-size:12px;}
+  .avatar.coach{background:var(--green); color:#fff;
+    box-shadow:0 0 0 2px #fff, 0 0 0 3.5px rgba(15,122,69,.35);}
+  .avatar.member{color:#26382e;}
+  .avatar-wrap{display:flex; align-items:center; gap:10px; min-width:0;}
+  .avatar-wrap .aw-txt{min-width:0;}
+  .avatar-wrap .aw-name{font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .avatar-wrap .aw-sub{font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+
+  /* תגית סטטוס צבעונית */
+  .chip-status{display:inline-flex; align-items:center; gap:5px; font-size:12.5px; font-weight:700; padding:5px 11px; border-radius:999px; flex:0 0 auto;}
+
+  /* רשומות היסטוריה קריאות */
+  .date-head{display:flex; align-items:center; justify-content:space-between; gap:8px; margin:2px 0 10px;}
+  .date-head .dh-title{font-weight:800; font-size:15.5px;}
+  .date-head .dh-sub{font-size:12px; color:var(--muted); font-weight:600;}
+  .date-head .dh-sum{font-size:12px; font-weight:700; color:var(--green-dark); background:var(--lime-soft); padding:4px 10px; border-radius:999px; flex:0 0 auto;}
+  .hrow{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 2px; border-bottom:1px solid var(--line);}
+  .hrow:last-child{border-bottom:none;}
+
+  /* אקורדיון דוח חניכים */
+  .acc-head{display:flex; align-items:center; gap:10px; padding:12px 2px; cursor:pointer; border-bottom:1px solid var(--line);}
+  .acc-card:last-child .acc-head{border-bottom:none;}
+  .acc-counts{display:flex; gap:5px; flex:0 0 auto;}
+  .cnt{font-size:12px; font-weight:800; padding:3px 8px; border-radius:8px; font-variant-numeric:tabular-nums;}
+  .caret{color:var(--muted); font-size:18px; flex:0 0 auto; transition:transform .18s;}
+  .acc-head.open .caret{transform:rotate(-90deg);}
+  .acc-detail{display:none; padding:4px 4px 12px;}
+  .acc-detail.open{display:block; animation:fade .2s ease;}
+  .acc-detail .hrow{padding:8px 2px 8px 48px;}
+
+  /* מסך בית */
+  .home-hero{background:var(--green); color:#fff; border-radius:var(--r); padding:20px; margin-bottom:16px;}
+  .home-hero .hero-top{display:flex; justify-content:space-between; align-items:flex-start; gap:12px;}
+  .home-hero .hh-greet{font-size:20px; font-weight:800;}
+  .home-hero .hh-date{font-size:14px; opacity:.9; margin-top:3px;}
+  .hero-count{flex:0 0 auto; text-align:center; background:#fff; color:var(--green-dark);
+    border-radius:14px; padding:8px 16px; cursor:pointer; transition:.12s;}
+  .hero-count:not(.active-all){opacity:.7;}
+  .hero-count .hc-num{font-family:var(--font-head); font-weight:900; font-size:34px; line-height:1;}
+  .hero-count .hc-label{font-size:11px; opacity:.9; margin-top:3px;}
+  .hero-breakdown{display:flex; flex-wrap:wrap; gap:8px; margin-top:14px;}
+  .hero-breakdown .hb{display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,.15);
+    border:1px solid rgba(255,255,255,.28); border-radius:999px; padding:7px 12px; font-size:12.5px; font-weight:700; cursor:pointer; transition:.12s;}
+  .hero-breakdown .hb b{font-size:15px;}
+  .hero-breakdown .hb.active{background:#fff; color:var(--green-dark); border-color:#fff;}
+  .hero-breakdown .hb:active{transform:scale(.96);}
+  .hero-breakdown .dot{width:9px; height:9px; border-radius:50%;}
+  .home-card{display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer; border:2px solid transparent;}
+  .home-card:active{transform:scale(.99);}
+  .home-actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:6px;}
+  .home-actions .btn{flex:1 1 44%; min-width:120px; flex-direction:column; gap:8px; font-size:14px; font-weight:700;
+    padding:16px 8px; background:#fff; color:var(--ink); border:1px solid var(--line); box-shadow:var(--shadow);}
+  .home-actions .btn:active{transform:scale(.985); background:#f6f8f7;}
+  .home-actions .btn .qa-ic{width:44px; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center;
+    font-size:21px; background:var(--surface-2);}
+  /* פעולה ראשית אחת — ירוק מלא */
+  .home-actions .btn.qa-primary{background:var(--green); color:#fff; border-color:var(--green);}
+  .home-actions .btn.qa-primary .qa-ic{background:rgba(255,255,255,.20);}
+  /* צ׳יפ סטטוס מפגש */
+  .sess-mini{display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:800; padding:3px 8px; border-radius:999px;}
+  .coach-chips{display:flex; gap:5px; flex-wrap:wrap; flex:0 0 auto;}
+  .live-pulse{width:8px; height:8px; border-radius:50%; background:var(--late); box-shadow:0 0 0 0 rgba(224,147,15,.6); animation:pulse 1.4s infinite;}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(224,147,15,.5);}70%{box-shadow:0 0 0 7px rgba(224,147,15,0);}100%{box-shadow:0 0 0 0 rgba(224,147,15,0);}}
+  .sess-row{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 2px; border-bottom:1px solid var(--line);}
+  .sess-row:last-child{border-bottom:none;}
+  .sess-actions{display:flex; gap:6px; flex:0 0 auto;}
+  .sess-note{font-size:12px; color:var(--muted); font-style:italic;}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="title"><span class="ball"></span><span>נוכחות</span></div>
+    <div class="hdr-chips">
+      <button class="chip filter" id="mgrFilterChip" style="display:none" onclick="openManagerFilter()">
+        <span id="mgrFilterName">כל המאמנים</span> ▾
+      </button>
+      <button class="chip" id="coachChip" onclick="openCoachPicker()">
+        <span id="coachChipName">בחר משתמש</span> ▾
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <div class="view active" id="view-loading">
+      <div class="loader"><div class="spinner"></div><div>טוען נתונים…</div></div>
+    </div>
+
+    <div class="view" id="view-setup">
+      <div class="banner info">👋 ברוכים הבאים! כדי להתחיל, יש לחבר את האפליקציה לגיליון Google Sheets.</div>
+      <div class="card">
+        <h2 class="section">חיבור לשרת הנתונים</h2>
+        <p class="sub">הדביקו כאן את כתובת ה-Web App שקיבלתם מ-Google Apps Script (ראו קובץ ההוראות SETUP-he.md).</p>
+        <label class="fld"><span class="lbl">כתובת ה-Web App</span>
+          <input class="input" id="setupUrl" placeholder="https://script.google.com/macros/s/.../exec" inputmode="url"></label>
+        <button class="btn" onclick="saveSetupUrl()">התחברות ובדיקה</button>
+        <div id="setupMsg" style="margin-top:10px"></div>
+      </div>
+      <p class="sub" style="text-align:center">אפשר גם להזין את הכתובת ישירות בקוד, בקבוע <b>CONFIG.API_URL</b>.</p>
+    </div>
+
+    <div class="view" id="view-error">
+      <div class="banner err" id="errText">אירעה שגיאה.</div>
+      <button class="btn secondary" onclick="init()">נסה שוב</button>
+    </div>
+
+    <!-- בית / דשבורד -->
+    <div class="view" id="view-home">
+      <div class="home-hero">
+        <div class="hero-top">
+          <div>
+            <div class="hh-greet" id="homeGreet">שלום 👋</div>
+            <div class="hh-date" id="homeDate"></div>
+          </div>
+          <div class="hero-count" id="homeCount" onclick="setHomeFilter('')" title="הצג הכל">
+            <div class="hc-num" id="homeCountNum">0</div>
+            <div class="hc-label">מפגשים היום</div>
+          </div>
+        </div>
+        <div class="hero-breakdown" id="homeBreakdown"></div>
+      </div>
+      <h2 class="section" id="homeTodayTitle">🎾 המפגשים של היום</h2>
+      <div id="homeToday" style="margin-bottom:16px"></div>
+      <div class="home-actions" id="homeActions"></div>
+    </div>
+
+    <!-- נוכחות: רשימת קבוצות -->
+    <div class="view" id="view-attendance">
+      <h2 class="section">📋 סימון נוכחות</h2>
+      <div id="scopeLine" class="sub" style="margin-bottom:12px"></div>
+      <div id="groupsList"></div>
+    </div>
+
+    <!-- מסך סימון קבוצה -->
+    <div class="view" id="view-mark">
+      <button class="btn secondary sm" style="margin-bottom:12px" onclick="show('attendance')">→ חזרה לקבוצות</button>
+      <div class="card">
+        <div id="markGroupName" style="font-weight:800; font-size:19px"></div>
+        <div id="markGroupMeta" class="sub"></div>
+        <div class="lbl" style="margin:14px 0 0">תאריך המפגש</div>
+        <div class="date-nav">
+          <button class="date-arrow" onclick="shiftMarkDate(-1)" aria-label="יום קודם">›</button>
+          <div class="date-field" onclick="openMarkDatePicker()" role="button" tabindex="0" aria-label="בחירת תאריך מהלוח">
+            <span class="date-cal">📅</span>
+            <span class="date-day" id="markDateDay">—</span>
+            <span class="date-num" id="markDateNum">—</span>
+            <input type="date" id="markDate" class="date-hidden" onchange="reloadMarkPrefill()" aria-label="בחירת תאריך" tabindex="-1">
+          </div>
+          <button class="date-arrow" onclick="shiftMarkDate(1)" aria-label="יום הבא">‹</button>
+        </div>
+        <button class="btn ghost sm today-btn" id="todayBtn" onclick="setMarkToday()">📅 היום</button>
+      </div>
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px">
+          <span class="pill" id="markCountPill">0 חניכים</span>
+          <button class="btn ghost sm" onclick="markAll('present')">סמן הכל נוכח ✓</button>
+        </div>
+        <div id="markList"></div>
+      </div>
+      <button class="btn" id="saveAttBtn" onclick="submitAttendance()">💾 שמירת נוכחות</button>
+    </div>
+
+    <!-- היסטוריה ודוחות -->
+    <div class="view" id="view-history">
+      <h2 class="section">📊 היסטוריה ודוחות</h2>
+      <div class="seg-tabs">
+        <button id="ht-records" class="active" onclick="switchHistTab('records')">רשומות</button>
+        <button id="ht-report" onclick="switchHistTab('report')">דוח חניכים</button>
+      </div>
+
+      <div id="hist-records">
+        <div class="card">
+          <div class="row2">
+            <label class="fld"><span class="lbl">מתאריך</span><input class="input" type="date" id="hFrom"></label>
+            <label class="fld"><span class="lbl">עד תאריך</span><input class="input" type="date" id="hTo"></label>
+          </div>
+          <label class="fld"><span class="lbl">קבוצה</span><select class="input" id="hGroup"></select></label>
+          <div class="row2">
+            <button class="btn sm" onclick="loadHistory()">הצג</button>
+            <button class="btn secondary sm" onclick="exportRecords()">⬇️ ייצוא לאקסל</button>
+          </div>
+        </div>
+        <div class="seg-tabs" id="histViewTabs" style="display:none">
+          <button id="hv-date" class="active" onclick="setHistView('date')">לפי תאריך</button>
+          <button id="hv-member" onclick="setHistView('member')">לפי חניך</button>
+        </div>
+        <div id="histResult"></div>
+      </div>
+
+      <div id="hist-report" style="display:none">
+        <div class="card">
+          <label class="fld"><span class="lbl">חודש</span><input class="input" type="month" id="rMonth"></label>
+          <label class="fld"><span class="lbl">קבוצה</span><select class="input" id="rGroup"></select></label>
+          <div class="row2">
+            <button class="btn sm" onclick="loadReport()">הפק דוח</button>
+            <button class="btn secondary sm" onclick="exportReport()">⬇️ ייצוא לאקסל</button>
+          </div>
+        </div>
+        <div id="reportResult"></div>
+      </div>
+    </div>
+
+    <!-- ניהול -->
+    <div class="view" id="view-manage">
+      <h2 class="section">⚙️ ניהול</h2>
+      <div class="seg-tabs">
+        <button id="mt-groups" class="active" onclick="switchManageTab('groups')">קבוצות</button>
+        <button id="mt-members" onclick="switchManageTab('members')">חניכים</button>
+        <button id="mt-coaches" onclick="switchManageTab('coaches')">מאמנים</button>
+      </div>
+
+      <div id="manage-groups">
+        <button class="btn" style="margin-bottom:12px" onclick="openGroupModal()">➕ קבוצה חדשה</button>
+        <div class="card" id="groupsManageList"></div>
+      </div>
+
+      <div id="manage-members" style="display:none">
+        <button class="btn" style="margin-bottom:12px" onclick="openMemberModal()">➕ חניך חדש</button>
+        <label class="fld"><span class="lbl">סינון לפי קבוצה</span><select class="input" id="memFilter" onchange="renderMembersManage()"></select></label>
+        <div class="card" id="membersManageList"></div>
+      </div>
+
+      <div id="manage-coaches" style="display:none">
+        <button class="btn" style="margin-bottom:12px" onclick="openCoachModal()">➕ מאמן חדש</button>
+        <div class="card" id="coachesManageList"></div>
+      </div>
+    </div>
+  </main>
+
+  <nav class="tabbar" id="tabbar" style="display:none">
+    <button id="tab-home" class="active" onclick="goHome()"><span class="ic">🏠</span>בית</button>
+    <button id="tab-attendance" onclick="show('attendance')"><span class="ic">📋</span>נוכחות</button>
+    <button id="tab-history" onclick="show('history')"><span class="ic">📊</span>היסטוריה</button>
+    <button id="tab-manage" onclick="show('manage')"><span class="ic">⚙️</span>ניהול</button>
+  </nav>
+</div>
+
+<div class="modal-back" id="modalBack" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modalBox"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ============================================================
+   CONFIG — הדביקו כאן את כתובת ה-Web App מ-Google Apps Script.
+   דוגמה: https://script.google.com/macros/s/AKfy.../exec
+   אפשר גם להזין את הכתובת דרך מסך ההגדרה באפליקציה עצמה.
+   ============================================================ */
+const CONFIG = {
+  API_URL: ""   // ← הדביקו כאן את הכתובת בין המרכאות
+};
+
+// ---------- מצב ----------
+const STATE = {
+  data:{coaches:[],groups:[],members:[]},
+  role:'coach',          // 'coach' = מאמן רגיל (רואה רק את עצמו) | 'manager' = מנהל (רואה הכל)
+  coachId:null,          // מזהה המאמן שנבחר (במצב מאמן)
+  managerFilter:'',      // סינון מנהל לפי מאמן ('' = כל המאמנים)
+  histView:'date',       // תצוגת היסטוריה: 'date' = לפי תאריך | 'member' = לפי חניך
+  homeFilter:'',         // סינון סטטוס במסך הבית ('' = הכל)
+  view:'loading', currentGroup:null, markDraft:{}
+};
+const DAYS = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+const STATUS_HE = {present:'נוכח', absent:'נעדר', late:'איחר'};
+const MANAGER = '__manager__';
+
+// שעות אימון: חצאי-שעה בלבד, פורמט 24 שעות (06:00 עד 22:00 כברירת מחדל להצגה נוחה,
+// אך הרשימה מכסה 00:00–23:30 כדי לתמוך בכל שעה עגולה/חצי-עגולה).
+const TIME_SLOTS = (function(){ var a=[]; for(var h=0; h<24; h++){ ['00','30'].forEach(function(mm){ a.push(String(h).padStart(2,'0')+':'+mm); }); } return a; })();
+// מנרמל כל שעה לתצוגת HH:MM ב-24 שעות (תומך גם בערכי תאריך/שעה ישנים מהגיליון)
+function fmtTime(t){
+  if(t==null || t==='') return '';
+  t=String(t);
+  var m=t.match(/(\d{1,2}):(\d{2})/);
+  if(m) return String(Number(m[1])).padStart(2,'0')+':'+m[2];
+  return t;
+}
+// בונה אפשרויות לבורר השעה; שומר על שעה חריגה קיימת אם אינה חצי-עגולה
+function timeOptions(selected){
+  selected=fmtTime(selected);
+  var opts=TIME_SLOTS.slice();
+  if(selected && opts.indexOf(selected)<0) opts.push(selected);
+  return opts.map(function(t){ return '<option value="'+t+'" '+(t===selected?'selected':'')+'>'+t+'</option>'; }).join('');
+}
+
+// ---------- עזרים ----------
+function getApiUrl(){ return (localStorage.getItem('ttc_url') || CONFIG.API_URL || '').trim(); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+function todayISO(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function $(id){ return document.getElementById(id); }
+function toast(msg,kind){ var t=$('toast'); t.textContent=msg; t.className=(kind||'')+' show'; setTimeout(function(){t.className=(kind||'');},2600); }
+
+function coachName(id){ var c=STATE.data.coaches.find(function(x){return x.id===id;}); return c?c.name:'—'; }
+function nameOfMember(id){ var m=STATE.data.members.find(function(x){return x.id===id;}); return m?m.name:'(חניך שנמחק)'; }
+function nameOfGroup(id){ var g=STATE.data.groups.find(function(x){return x.id===id;}); return g?g.name:'(קבוצה שנמחקה)'; }
+// תווית קבוצה כוללת שם מאמן — כדי להבחין בין קבוצות בעלות שם זהה
+function groupLabel(id){ var g=STATE.data.groups.find(function(x){return x.id===id;}); return g?g.name+' · '+coachName(g.coachId):'(קבוצה שנמחקה)'; }
+function memberGroups(m){ return (m.groupIds||[]).map(function(id){return groupLabel(id);}).join(' / '); }
+
+// ---------- לו"ז שבועי (אימונים מרובים לקבוצה) ----------
+function groupSlots(g){ return (g && g.slots && g.slots.length) ? g.slots : [{day:String(g.day), time:fmtTime(g.time)}]; }
+function slotsLabel(g){ return groupSlots(g).map(function(s){ return 'יום '+DAYS[Number(s.day)]+' '+fmtTime(s.time); }).join(' · '); }
+function groupHasDay(g, wd){ return groupSlots(g).some(function(s){ return String(s.day)===String(wd); }); }
+function slotTimeForDay(g, wd){ var f=groupSlots(g).filter(function(s){return String(s.day)===String(wd);})[0]; return fmtTime(f ? f.time : groupSlots(g)[0].time); }
+
+// ---------- אווטארים ותגיות ----------
+function initials(name){
+  var parts = String(name||'').trim().split(/\s+/).filter(Boolean);
+  var s = (parts[0]||'').charAt(0) + ((parts[1]||'').charAt(0) || '');
+  return s || '?';
+}
+// פלטת צבעים רכים לחניכים (ירוק שמור למאמן, כדי להבחין)
+var MEMBER_HUES = [
+  {bg:'#e6efff',fg:'#2a5bb0'}, {bg:'#f0e9ff',fg:'#6a3fb0'}, {bg:'#ffe9ef',fg:'#c03a6b'},
+  {bg:'#fdeede',fg:'#b5651d'}, {bg:'#e2f6f4',fg:'#158079'}, {bg:'#eef3d8',fg:'#6f7d1a'},
+  {bg:'#ffe7e0',fg:'#c0492f'}, {bg:'#e7edf5',fg:'#3f5673'}
+];
+function memberColor(key){
+  var s = String(key||''), h = 0;
+  for(var i=0;i<s.length;i++){ h = (h*31 + s.charCodeAt(i)) >>> 0; }
+  return MEMBER_HUES[h % MEMBER_HUES.length];
+}
+// type: 'coach' | 'member'
+function avatar(name, type, key, size){
+  var ini = esc(initials(name));
+  var cls = 'avatar' + (size==='sm'?' sm':'') + (type==='coach'?' coach':' member');
+  if(type==='coach') return '<span class="'+cls+'" title="מאמן">'+ini+'</span>';
+  var c = memberColor(key||name);
+  return '<span class="'+cls+'" style="background:'+c.bg+';color:'+c.fg+'">'+ini+'</span>';
+}
+function statusChip(st){
+  var map = {present:['נוכח','var(--present)','#e6f6ee'], late:['איחר','var(--late)','#fdf2e0'], absent:['נעדר','var(--absent)','#fdeaea']};
+  var m = map[st] || [st,'var(--muted)','#eef1ef'];
+  return '<span class="chip-status" style="color:'+m[1]+';background:'+m[2]+'"><span class="status-dot" style="background:'+m[1]+'"></span>'+m[0]+'</span>';
+}
+
+// קבוצות/חניכים הנראים למשתמש הנוכחי (לפי תפקיד וסינון מנהל)
+function visibleGroups(){
+  var gs=STATE.data.groups;
+  if(STATE.role==='coach') return gs.filter(function(g){return String(g.coachId)===String(STATE.coachId);});
+  if(STATE.managerFilter) return gs.filter(function(g){return String(g.coachId)===String(STATE.managerFilter);});
+  return gs;
+}
+function visibleGroupIdSet(){ var s={}; visibleGroups().forEach(function(g){s[g.id]=1;}); return s; }
+function memberInVisible(m){ var s=visibleGroupIdSet(); return (m.groupIds||[]).some(function(id){return s[id];}); }
+
+// קריאה ל-API. שולח JSON כ-text/plain כדי להימנע מ-preflight (CORS).
+async function api(action, params){
+  var url = getApiUrl();
+  if(!url) throw new Error('כתובת ה-API אינה מוגדרת');
+  var res = await fetch(url, {
+    method:'POST', redirect:'follow',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify(Object.assign({action:action}, params||{}))
+  });
+  var text = await res.text();
+  var json;
+  try{ json = JSON.parse(text); }catch(e){ throw new Error('תשובה לא תקינה מהשרת. ודאו שכתובת ה-Web App נכונה.'); }
+  if(!json.ok) throw new Error(json.error || 'שגיאה לא ידועה מהשרת');
+  return json.data;
+}
+
+// ---------- ניווט ----------
+function show(view){
+  STATE.view = view;
+  document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('active'); });
+  var el = $('view-'+view); if(el) el.classList.add('active');
+  ['home','attendance','history','manage'].forEach(function(t){
+    var b=$('tab-'+t); if(b) b.classList.toggle('active', t===view);
+  });
+  window.scrollTo(0,0);
+}
+function goHome(){ show('home'); renderHome(); }
+function goManageMembers(){ show('manage'); switchManageTab('members'); }
+
+// ---------- מסך בית (דשבורד) ----------
+// סטטוסי מפגש: done=בוצע · ongoing=מתרחש כרגע · upcoming=טרם התחיל · canceled=בוטל
+var SESS_META = {
+  done:    {label:'בוצע',        color:'var(--present)', bg:'#e6f6ee'},
+  ongoing: {label:'מתרחש כרגע',  color:'var(--late)',    bg:'#fdf2e0'},
+  upcoming:{label:'טרם התחיל',   color:'var(--muted)',   bg:'#eef1ef'},
+  canceled:{label:'בוטל',        color:'var(--absent)',  bg:'#fdeaea'}
+};
+// נקודות בהירות לצ׳יפים על הרקע הירוק בכותרת (נראות טובה)
+var HERO_DOT = { done:'#7CE0A3', ongoing:'#ffb454', upcoming:'#dfe7e2', canceled:'#ff7b7b' };
+var SESSION_MIN = 60; // משך אימון: שעה
+function nowMinutes(){ var d=new Date(); return d.getHours()*60 + d.getMinutes(); }
+function timeToMin(t){ t=fmtTime(t); var p=String(t).split(':'); return (Number(p[0])||0)*60 + (Number(p[1])||0); }
+function sessionStatusT(gid, time, markedSet, canceledSet){
+  if(canceledSet[gid]) return 'canceled';
+  if(markedSet[gid]) return 'done';
+  return nowMinutes() >= timeToMin(time) ? 'ongoing' : 'upcoming';
+}
+function isLiveT(time){ var s=timeToMin(time), n=nowMinutes(); return n>=s && n<s+SESSION_MIN; }
+function sessMini(status){ var m=SESS_META[status]; return '<span class="sess-mini" style="color:'+m.color+';background:'+m.bg+'"><span class="dot" style="background:'+m.color+'"></span>'+m.label+'</span>'; }
+
+var HOME_DATA = null;
+async function renderHome(){
+  var who = STATE.role==='manager' ? 'מנהל' : (STATE.coachId ? coachName(STATE.coachId) : '');
+  $('homeGreet').textContent = 'שלום' + (who ? ', '+who : '') + ' 👋';
+  var nd = niceDate(todayISO());
+  $('homeDate').textContent = nd.day + ' · ' + nd.num;
+
+  var acts = '';
+  if(STATE.role==='manager'){
+    acts += '<button class="btn" onclick="openGroupModal()"><span class="qa-ic">➕</span>צור קבוצה</button>'+
+            '<button class="btn" onclick="goManageMembers()"><span class="qa-ic">🧍</span>הוספת חניך</button>';
+  }
+  acts += '<button class="btn" onclick="show(\'attendance\')"><span class="qa-ic">📋</span>כל הקבוצות</button>'+
+          '<button class="btn" onclick="show(\'history\')"><span class="qa-ic">📊</span>דוחות</button>';
+  $('homeActions').innerHTML = acts;
+
+  // מנהל רואה בבית את כל המתחם (כל המאמנים), ללא סינון; מאמן רואה רק את שלו
+  var homeSource = STATE.role==='manager' ? STATE.data.groups : visibleGroups();
+  $('homeTodayTitle').textContent = '🎾 המפגשים של היום' + (STATE.role==='manager' ? ' · כל המתחם' : '');
+  var today = new Date().getDay();
+  var todays = [];
+  homeSource.forEach(function(g){
+    groupSlots(g).forEach(function(s){ if(String(s.day)===String(today)) todays.push({g:g, time:fmtTime(s.time)}); });
+  });
+  var el = $('homeToday');
+  if(todays.length===0){
+    HOME_DATA=null; $('homeCountNum').textContent='0'; $('homeBreakdown').innerHTML='';
+    $('homeCount').classList.add('active-all');
+    el.innerHTML='<div class="empty"><div class="big">🎾</div>אין מפגשים היום. נתראה בפעם הבאה!</div>';
+    return;
+  }
+  el.innerHTML='<div class="loader"><div class="spinner"></div></div>';
+
+  var markedSet={}, canceledSet={}, canceledInfo={};
+  try{
+    var res = await Promise.all([
+      api('getHistory',{from:todayISO(),to:todayISO()}),
+      api('getSessions',{from:todayISO(),to:todayISO()})
+    ]);
+    res[0].forEach(function(r){ markedSet[r.groupId]=true; });
+    res[1].forEach(function(s){ if(s.status==='canceled'){ canceledSet[s.groupId]=true; canceledInfo[s.groupId]={note:s.note||'', makeup:s.makeup||''}; } });
+  }catch(e){ /* אם נכשל — נחשב לפי שעה בלבד */ }
+
+  HOME_DATA = {todays:todays, markedSet:markedSet, canceledSet:canceledSet, canceledInfo:canceledInfo};
+  renderHomeList();
+}
+function statusOf(e){ return sessionStatusT(e.g.id, e.time, HOME_DATA.markedSet, HOME_DATA.canceledSet); }
+function setHomeFilter(k){ STATE.homeFilter = (STATE.homeFilter===k)?'':k; renderHomeList(); }
+function renderHomeList(){
+  var d = HOME_DATA; if(!d) return;
+  var order=['done','ongoing','upcoming','canceled'];
+  var counts={done:0,ongoing:0,upcoming:0,canceled:0};
+  d.todays.forEach(function(e){ counts[statusOf(e)]++; });
+  $('homeCountNum').textContent = d.todays.length;
+  $('homeCount').classList.toggle('active-all', !STATE.homeFilter);
+  // צ׳יפים לחיצים לסינון
+  $('homeBreakdown').innerHTML = order.map(function(k){ var m=SESS_META[k];
+    var dc = (STATE.homeFilter===k) ? m.color : HERO_DOT[k];   // צ׳יפ פעיל=לבן→נקודה כהה; אחרת נקודה בהירה
+    return '<button class="hb'+(STATE.homeFilter===k?' active':'')+'" onclick="setHomeFilter(\''+k+'\')">'+
+      '<span class="dot" style="background:'+dc+'"></span><b>'+counts[k]+'</b> '+m.label+'</button>';
+  }).join('');
+  // סינון הרשימה לפי הסטטוס שנבחר
+  var entries = d.todays.filter(function(e){ return !STATE.homeFilter || statusOf(e)===STATE.homeFilter; });
+  var el=$('homeToday');
+  if(entries.length===0){ el.innerHTML='<div class="empty">אין מפגשים בסטטוס זה.</div>'; return; }
+  var byCoach={}; entries.forEach(function(e){ (byCoach[e.g.coachId]=byCoach[e.g.coachId]||[]).push(e); });
+  var coachIds=Object.keys(byCoach).sort(function(a,b){ return coachName(a)>coachName(b)?1:-1; });
+  el.innerHTML = coachIds.map(function(cid){
+    var list=byCoach[cid].slice().sort(function(a,b){ return timeToMin(a.time)-timeToMin(b.time); });
+    var cc={done:0,ongoing:0,upcoming:0,canceled:0};
+    list.forEach(function(e){ cc[statusOf(e)]++; });
+    var chips=order.filter(function(k){return cc[k]>0;}).map(function(k){ var m=SESS_META[k]; return '<span class="sess-mini" style="color:'+m.color+';background:'+m.bg+'">'+cc[k]+' '+m.label+'</span>'; }).join('');
+    var detail=list.map(function(e){
+      var g=e.g, st=statusOf(e);
+      var live = (st==='ongoing' && isLiveT(e.time)) ? '<span class="live-pulse" title="עכשיו"></span>' : '';
+      var extra='', actions='';
+      if(st==='canceled'){
+        var info=d.canceledInfo[g.id]||{};
+        if(info.makeup){ extra='<div class="sess-note" style="color:var(--present)">↪ הושלם ל-'+esc(niceDate(info.makeup).num)+'</div>'; }
+        else{ extra='<span class="sess-mini" style="color:var(--absent);background:#fdeaea;margin-inline-start:6px">⚠ להשלמה</span>'; }
+        if(info.note) extra+='<div class="sess-note">הערה: '+esc(info.note)+'</div>';
+        actions=(info.makeup?'':'<button class="btn ghost sm" onclick="event.stopPropagation();openMakeupModal(\''+g.id+'\')">קבע השלמה</button>')+
+          '<button class="icon-btn" title="בטל ביטול" onclick="event.stopPropagation();restoreSession(\''+g.id+'\')">↩︎</button>';
+      } else {
+        actions='<button class="btn ghost sm" onclick="event.stopPropagation();openMark(\''+g.id+'\')">סמן</button>'+
+          '<button class="icon-btn danger" title="בטל מפגש" onclick="event.stopPropagation();openCancelModal(\''+g.id+'\')">✕</button>';
+      }
+      return '<div class="sess-row"><div style="min-width:0"><div class="aw-name">'+live+' '+esc(g.name)+' · '+esc(e.time)+'</div>'+
+        sessMini(st)+extra+'</div><div class="sess-actions">'+actions+'</div></div>';
+    }).join('');
+    return '<div class="card acc-card" style="padding:6px 14px">'+
+      '<div class="acc-head" onclick="toggleReportRow(this)"><div class="avatar-wrap">'+avatar(coachName(cid),'coach',cid)+
+      '<div class="aw-txt"><div class="aw-name">'+esc(coachName(cid))+'</div><div class="aw-sub">'+list.length+' אימונים היום</div></div></div>'+
+      '<div class="coach-chips">'+(chips||'')+'</div><span class="caret">‹</span></div>'+
+      '<div class="acc-detail">'+detail+'</div></div>';
+  }).join('');
+}
+
+// ביטול מפגש — הערה + אופציה לקבוע כבר עכשיו תאריך השלמה
+function openCancelModal(groupId){
+  var g=STATE.data.groups.find(function(x){return x.id===groupId;}); if(!g) return;
+  openModal('<h3>ביטול מפגש</h3><p class="sub">'+esc(g.name)+' · '+esc(coachName(g.coachId))+' · '+esc(fmtTime(g.time))+'</p>'+
+    '<label class="fld"><span class="lbl">הערה (רשות)</span><textarea class="input" id="cancelNote" rows="2" placeholder="סיבת הביטול, למשל: גשם"></textarea></label>'+
+    '<label class="chk-row" style="border-bottom:none; padding:6px 4px 4px"><input type="checkbox" id="cancelSetMakeup" onchange="toggleCancelMakeup()">'+
+      '<span class="t"><b>קבע תאריך השלמה עכשיו</b><small>אם לא — יופיע סימן "להשלמה" ותוכלי לקבוע אחר כך</small></span></label>'+
+    '<div id="cancelMakeupBox" style="display:none; margin-bottom:12px">'+makeupNavHtml()+'</div>'+
+    '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">חזרה</button>'+
+    '<button class="btn" style="background:var(--absent)" onclick="doCancelSession(\''+groupId+'\')">בטל מפגש</button></div>');
+}
+function toggleCancelMakeup(){
+  var on=$('cancelSetMakeup').checked;
+  $('cancelMakeupBox').style.display = on ? 'block' : 'none';
+  if(on){ $('makeupDate').value = addDaysISO(todayISO(), 7); updateMakeupLabel(); }
+}
+async function doCancelSession(groupId){
+  var note=$('cancelNote').value.trim();
+  var makeup=($('cancelSetMakeup') && $('cancelSetMakeup').checked) ? ($('makeupDate').value||'') : '';
+  try{ await api('cancelSession',{date:todayISO(), groupId:groupId, note:note, by:markedByName(), makeup:makeup});
+    closeModal();
+    if(makeup){ toast('המפגש בוטל · השלמה נקבעה ✓','ok'); }
+    else{ STATE.homeFilter='canceled'; toast('המפגש בוטל — יש לקבוע תאריך השלמה','bad'); } // מעבר לרשימת ההשלמות
+    renderHome();
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
+}
+// קביעת/עדכון תאריך השלמה למפגש שבוטל (השלמת פעולת ההזזה)
+function addDaysISO(iso, days){
+  var p=(iso||todayISO()).split('-');
+  var d=new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
+  d.setDate(d.getDate()+days);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function updateMakeupLabel(){
+  var v=$('makeupDate').value||todayISO(); var p=v.split('-');
+  var d=new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
+  $('mkDay').textContent='יום '+DAYS[d.getDay()];
+  $('mkNum').textContent=p[2]+'/'+p[1]+'/'+p[0];
+}
+function shiftMakeupDate(delta){ $('makeupDate').value=addDaysISO($('makeupDate').value, delta); updateMakeupLabel(); }
+function setMakeupPreset(days){ $('makeupDate').value=addDaysISO(todayISO(), days); updateMakeupLabel(); }
+function openMakeupPicker(){
+  var inp=$('makeupDate');
+  try{ if(typeof inp.showPicker==='function'){ inp.showPicker(); return; } }catch(e){}
+  inp.style.pointerEvents='auto'; inp.style.width='100%'; inp.style.height='100%'; inp.style.left='0'; inp.style.bottom='0'; inp.focus();
+}
+// רכיב בורר תאריך נוח משותף (מזהים: makeupDate / mkDay / mkNum)
+function makeupNavHtml(){
+  return '<div class="date-nav">'+
+    '<button class="date-arrow" onclick="shiftMakeupDate(-1)" aria-label="יום קודם">›</button>'+
+    '<div class="date-field" onclick="openMakeupPicker()" role="button" tabindex="0">'+
+      '<span class="date-cal">📅</span>'+
+      '<span class="date-day" id="mkDay">—</span>'+
+      '<span class="date-num" id="mkNum">—</span>'+
+      '<input type="date" id="makeupDate" class="date-hidden" onchange="updateMakeupLabel()">'+
+    '</div>'+
+    '<button class="date-arrow" onclick="shiftMakeupDate(1)" aria-label="יום הבא">‹</button>'+
+    '</div>'+
+    '<div class="row2" style="margin-top:10px">'+
+      '<button class="btn ghost sm" onclick="setMakeupPreset(7)">+ שבוע</button>'+
+      '<button class="btn ghost sm" onclick="setMakeupPreset(14)">+ שבועיים</button>'+
+    '</div>';
+}
+function openMakeupModal(groupId){
+  var g=STATE.data.groups.find(function(x){return x.id===groupId;}); if(!g) return;
+  var info=(HOME_DATA&&HOME_DATA.canceledInfo[groupId])||{};
+  var initVal = info.makeup || addDaysISO(todayISO(), 7);
+  openModal('<h3>קביעת השלמה</h3><p class="sub">'+esc(g.name)+' · '+esc(coachName(g.coachId))+'</p>'+
+    '<div class="lbl" style="font-size:13px;font-weight:600;margin-bottom:5px">תאריך ההשלמה</div>'+
+    makeupNavHtml()+
+    (info.note?'<div class="sub" style="margin-top:12px">הערת הביטול: '+esc(info.note)+'</div>':'')+
+    '<div class="modal-actions" style="margin-top:14px"><button class="btn secondary" onclick="closeModal()">חזרה</button>'+
+    '<button class="btn" onclick="doSetMakeup(\''+groupId+'\')">שמירה</button></div>');
+  $('makeupDate').value = initVal; updateMakeupLabel();
+}
+async function doSetMakeup(groupId){
+  var mk=$('makeupDate').value; if(!mk){ toast('בחרו תאריך השלמה','bad'); return; }
+  var info=(HOME_DATA&&HOME_DATA.canceledInfo[groupId])||{};
+  try{ await api('cancelSession',{date:todayISO(), groupId:groupId, note:info.note||'', by:markedByName(), makeup:mk});
+    closeModal(); toast('השלמה נקבעה ✓','ok'); renderHome();
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
+}
+async function restoreSession(groupId){
+  try{ await api('restoreSession',{date:todayISO(), groupId:groupId});
+    toast('הביטול הוסר','ok'); renderHome();
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
+}
+
+// ---------- אתחול ----------
+async function init(){
+  show('loading');
+  $('tabbar').style.display='none';
+  if(!getApiUrl()){ show('setup'); return; }
+  try{
+    STATE.data = await api('getAll');
+    // שחזור תפקיד/משתמש
+    var savedRole = localStorage.getItem('ttc_role');
+    var savedCoach = localStorage.getItem('ttc_coach');
+    if(savedRole==='manager'){ STATE.role='manager'; STATE.coachId=null; }
+    else if(savedCoach && STATE.data.coaches.some(function(c){return c.id===savedCoach;})){ STATE.role='coach'; STATE.coachId=savedCoach; }
+    else { STATE.role='coach'; STATE.coachId=null; }
+    STATE.managerFilter = localStorage.getItem('ttc_mgrfilter')||'';
+
+    updateChips();
+    $('tabbar').style.display='flex';
+    refreshAll();
+    goHome();
+    if(STATE.role==='coach' && !STATE.coachId) openCoachPicker(true);
+  }catch(err){
+    $('errText').textContent = 'שגיאה בטעינת הנתונים: ' + err.message;
+    show('error');
+  }
+}
+
+function refreshAll(){
+  populateSelects();
+  renderGroupsList();
+  if(STATE.view==='home') renderHome();
+  // רענון מסך הניהול אם פתוח
+  if($('mt-groups').classList.contains('active')) renderGroupsManage();
+  if($('mt-members').classList.contains('active')){ populateMemberFilter(); renderMembersManage(); }
+  if($('mt-coaches').classList.contains('active')) renderCoachesManage();
+}
+
+function saveSetupUrl(){
+  var u = $('setupUrl').value.trim();
+  if(!u){ $('setupMsg').innerHTML='<div class="banner err">נא להזין כתובת.</div>'; return; }
+  localStorage.setItem('ttc_url', u);
+  $('setupMsg').innerHTML='<div class="sub">בודק חיבור…</div>';
+  api('ping').then(function(){ $('setupMsg').innerHTML='<div class="banner info">✓ החיבור הצליח!</div>'; setTimeout(init,600); })
+    .catch(function(e){ $('setupMsg').innerHTML='<div class="banner err">החיבור נכשל: '+esc(e.message)+'</div>'; });
+}
+
+// ---------- תפקיד ומאמן ----------
+function updateChips(){
+  var chip=$('coachChip');
+  if(STATE.role==='manager'){
+    $('coachChipName').textContent='מנהל';
+    chip.classList.add('admin');
+    $('mgrFilterChip').style.display='flex';
+    $('mgrFilterName').textContent = STATE.managerFilter ? coachName(STATE.managerFilter) : 'כל המאמנים';
+  }else{
+    $('coachChipName').textContent = STATE.coachId ? coachName(STATE.coachId) : 'בחר משתמש';
+    chip.classList.remove('admin');
+    $('mgrFilterChip').style.display='none';
+  }
+}
+
+function openCoachPicker(force){
+  var cs = STATE.data.coaches;
+  var body = '<h3>מי משתמש באפליקציה?</h3>';
+  // אפשרות המנהל
+  body += '<div class="list-item" onclick="pickRole(\''+MANAGER+'\')" style="cursor:pointer">'+
+          '<span style="font-weight:700; color:var(--admin)">👑 מנהל / כל המאמנים</span>'+
+          (STATE.role==='manager'?'<span class="pill">נבחר</span>':'<span class="chev">‹</span>')+'</div>';
+  if(cs.length===0){
+    body += '<div class="empty" style="padding:20px 8px"><div class="big">🎾</div>עדיין אין מאמנים. הוסיפו במסך "ניהול".</div>';
+  }else{
+    body += cs.map(function(c){
+      var on = (STATE.role==='coach' && c.id===STATE.coachId);
+      return '<div class="list-item" onclick="pickRole(\''+c.id+'\')" style="cursor:pointer">'+
+             '<div class="avatar-wrap">'+avatar(c.name,'coach',c.id,'sm')+'<span class="aw-name">'+esc(c.name)+'</span></div>'+(on?'<span class="pill">נבחר</span>':'<span class="chev">‹</span>')+'</div>';
+    }).join('');
+  }
+  if(!force) body += '<button class="btn secondary" style="margin-top:14px" onclick="closeModal()">סגירה</button>';
+  openModal(body);
+}
+function pickRole(id){
+  if(id===MANAGER){ STATE.role='manager'; STATE.coachId=null; localStorage.setItem('ttc_role','manager'); }
+  else{ STATE.role='coach'; STATE.coachId=id; localStorage.setItem('ttc_role','coach'); localStorage.setItem('ttc_coach',id); }
+  updateChips(); closeModal(); refreshAll();
+}
+
+// סינון מנהל לפי מאמן (הצ׳יפ השמאלי)
+function openManagerFilter(){
+  var cs=STATE.data.coaches;
+  var body='<h3>סינון לפי מאמן</h3>';
+  body+='<div class="list-item" onclick="setManagerFilter(\'\')" style="cursor:pointer">'+
+        '<span style="font-weight:700">כל המאמנים</span>'+(!STATE.managerFilter?'<span class="pill">נבחר</span>':'<span class="chev">‹</span>')+'</div>';
+  body+=cs.map(function(c){
+    var on=STATE.managerFilter===c.id;
+    var gc=STATE.data.groups.filter(function(g){return g.coachId===c.id;}).length;
+    return '<div class="list-item" onclick="setManagerFilter(\''+c.id+'\')" style="cursor:pointer">'+
+      '<div class="avatar-wrap">'+avatar(c.name,'coach',c.id,'sm')+'<div class="aw-txt"><div class="aw-name">'+esc(c.name)+'</div><div class="aw-sub">'+gc+' קבוצות</div></div></div>'+
+      (on?'<span class="pill">נבחר</span>':'<span class="chev">‹</span>')+'</div>';
+  }).join('');
+  body+='<button class="btn secondary" style="margin-top:14px" onclick="closeModal()">סגירה</button>';
+  openModal(body);
+}
+function setManagerFilter(id){
+  STATE.managerFilter=id; localStorage.setItem('ttc_mgrfilter',id||'');
+  updateChips(); closeModal(); refreshAll();
+  // ניקוי תוצאות היסטוריה קודמות שאולי כבר לא רלוונטיות
+  $('histResult').innerHTML=''; $('reportResult').innerHTML='';
+}
+
+// ---------- רשימת קבוצות (נוכחות) ----------
+function renderGroupsList(){
+  var today = new Date().getDay();
+  var scope = STATE.role==='manager'
+    ? (STATE.managerFilter ? 'מציג את קבוצות '+coachName(STATE.managerFilter) : 'מציג את כל הקבוצות (מצב מנהל)')
+    : (STATE.coachId ? 'הקבוצות שלך, '+coachName(STATE.coachId) : '');
+  $('scopeLine').textContent = 'היום יום ' + DAYS[today] + ' · ' + todayISO() + (scope? ' · '+scope : '');
+
+  var groups = visibleGroups().slice().sort(function(a,b){
+    var at=groupHasDay(a,today)?0:1, bt=groupHasDay(b,today)?0:1;
+    return at-bt || (Number(groupSlots(a)[0].day)-Number(groupSlots(b)[0].day));
+  });
+  var wrap = $('groupsList');
+  if(groups.length===0){
+    var msg = STATE.role==='coach' ? 'אין קבוצות המשויכות אליך.<br>המנהל יכול לשייך אליך קבוצות במסך "ניהול".' : 'עדיין אין קבוצות.<br>הוסיפו קבוצה במסך "ניהול".';
+    wrap.innerHTML = '<div class="empty"><div class="big">🎾</div>'+msg+'</div>';
+    return;
+  }
+  wrap.innerHTML = groups.map(function(g){
+    var mCount = STATE.data.members.filter(function(m){return (m.groupIds||[]).indexOf(g.id)>=0;}).length;
+    var isToday = groupHasDay(g, today);
+    return '<div class="card group-card '+(isToday?'today':'')+'" onclick="openMark(\''+g.id+'\')">'+
+      '<div class="avatar-wrap">'+avatar(coachName(g.coachId),'coach',g.coachId)+
+      '<div class="aw-txt"><div class="g-name">'+esc(g.name)+(isToday?' <span class="badge-today">היום</span>':'')+'</div>'+
+      '<div class="g-coach">'+esc(coachName(g.coachId))+'</div>'+
+      '<div class="g-meta">'+esc(slotsLabel(g))+' · '+mCount+' חניכים</div></div></div>'+
+      '<span class="chev">‹</span></div>';
+  }).join('');
+}
+
+// ---------- סימון נוכחות ----------
+async function openMark(groupId){
+  if(STATE.role==='coach' && !STATE.coachId){ openCoachPicker(true); return; }
+  var g = STATE.data.groups.find(function(x){return x.id===groupId;});
+  if(!g) return;
+  STATE.currentGroup = g;
+  $('markGroupName').textContent = g.name;
+  $('markDate').value = todayISO();
+  show('mark');
+  await reloadMarkPrefill();
+}
+
+function membersOfGroup(gid){ return STATE.data.members.filter(function(m){return (m.groupIds||[]).indexOf(gid)>=0;}); }
+
+// עדכון תצוגת התאריך הידידותית (יום בשבוע + dd/mm/yyyy) וכפתור "היום"
+function updateMarkDateLabel(){
+  var v = $('markDate').value || todayISO();
+  var p = v.split('-'); // yyyy-mm-dd
+  var d = new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
+  $('markDateDay').textContent = 'יום ' + DAYS[d.getDay()];
+  $('markDateNum').textContent = p[2] + '/' + p[1] + '/' + p[0];
+  $('todayBtn').classList.toggle('is-today', v===todayISO());
+}
+// הזזת התאריך ביום אחד קדימה/אחורה
+function shiftMarkDate(delta){
+  var v = $('markDate').value || todayISO();
+  var p = v.split('-');
+  var d = new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
+  d.setDate(d.getDate()+delta);
+  $('markDate').value = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  reloadMarkPrefill();
+}
+function setMarkToday(){ $('markDate').value = todayISO(); reloadMarkPrefill(); }
+// פתיחת לוח־שנה מלא לבחירת תאריך רחוק (במקום ללחוץ על החצים הרבה פעמים)
+function openMarkDatePicker(){
+  var inp = $('markDate');
+  try{ if(typeof inp.showPicker === 'function'){ inp.showPicker(); return; } }catch(e){}
+  // גיבוי לדפדפנים ישנים: הפיכת השדה לזמין־מגע והתמקדות בו
+  inp.style.pointerEvents='auto'; inp.style.width='100%'; inp.style.height='100%';
+  inp.style.left='0'; inp.style.bottom='0'; inp.focus();
+}
+
+async function reloadMarkPrefill(){
+  var g = STATE.currentGroup; if(!g) return;
+  var date = $('markDate').value || todayISO();
+  updateMarkDateLabel();
+  // תצוגת השעה לפי יום המפגש שנבחר
+  var wd = new Date(date.split('-')[0], Number(date.split('-')[1])-1, date.split('-')[2]).getDay();
+  $('markGroupMeta').textContent = '👤 '+coachName(g.coachId)+' · יום '+DAYS[wd]+' · '+slotTimeForDay(g, wd);
+  var members = membersOfGroup(g.id);
+  STATE.markDraft = {};
+  members.forEach(function(m){ STATE.markDraft[m.id]='present'; });
+  try{
+    var hist = await api('getHistory',{from:date,to:date,groupId:g.id});
+    hist.forEach(function(r){ if(STATE.markDraft.hasOwnProperty(r.memberId)) STATE.markDraft[r.memberId]=r.status; });
+  }catch(e){ /* ממשיכים עם ברירת מחדל */ }
+  renderMarkList();
+}
+
+function renderMarkList(){
+  var g = STATE.currentGroup;
+  var members = membersOfGroup(g.id);
+  $('markCountPill').textContent = members.length + ' חניכים';
+  if(members.length===0){ $('markList').innerHTML='<div class="empty">אין חניכים בקבוצה זו.<br><button class="btn sm" style="margin-top:12px" onclick="openMemberModal(null,\''+g.id+'\')">➕ הוסף חניך לקבוצה זו</button></div>'; $('saveAttBtn').disabled=true; return; }
+  $('saveAttBtn').disabled=false;
+  $('markList').innerHTML = members.map(function(m){
+    var st = STATE.markDraft[m.id]||'present';
+    function b(k,label){ return '<button class="'+(st===k?'on-'+k:'')+'" onclick="setStatus(\''+m.id+'\',\''+k+'\')">'+label+'</button>'; }
+    return '<div class="att-row"><div class="avatar-wrap">'+avatar(m.name,'member',m.id,'sm')+'<span class="att-name">'+esc(m.name)+'</span></div>'+
+      '<span class="seg">'+b('present','נוכח')+b('late','איחר')+b('absent','נעדר')+'</span></div>';
+  }).join('');
+}
+function setStatus(memberId,status){ STATE.markDraft[memberId]=status; renderMarkList(); }
+function markAll(status){ Object.keys(STATE.markDraft).forEach(function(k){STATE.markDraft[k]=status;}); renderMarkList(); }
+
+function markedByName(){ return STATE.role==='manager' ? 'מנהל' : coachName(STATE.coachId); }
+
+async function submitAttendance(){
+  var g = STATE.currentGroup;
+  var date = $('markDate').value || todayISO();
+  var records = Object.keys(STATE.markDraft).map(function(id){ return {memberId:id, status:STATE.markDraft[id]}; });
+  var btn = $('saveAttBtn'); btn.disabled=true; btn.textContent='שומר…';
+  try{
+    await api('saveAttendance', {date:date, groupId:g.id, markedBy:markedByName(), records:records});
+    toast('הנוכחות נשמרה ✓','ok');
+    show('attendance');
+  }catch(err){
+    toast('שגיאה בשמירה: '+err.message,'bad');
+  }finally{
+    btn.disabled=false; btn.textContent='💾 שמירת נוכחות';
+  }
+}
+
+// ---------- מודל ----------
+function openModal(html){ $('modalBox').innerHTML=html; $('modalBack').classList.add('open'); }
+function closeModal(){ $('modalBack').classList.remove('open'); }
+
+// ---------- ניהול: לשוניות ----------
+function switchManageTab(t){
+  ['groups','members','coaches'].forEach(function(x){
+    $('manage-'+x).style.display = (x===t)?'block':'none';
+    $('mt-'+x).classList.toggle('active', x===t);
+  });
+  if(t==='groups') renderGroupsManage();
+  if(t==='members'){ populateMemberFilter(); renderMembersManage(); }
+  if(t==='coaches') renderCoachesManage();
+}
+
+// ---------- ניהול קבוצות ----------
+function renderGroupsManage(){
+  var el=$('groupsManageList'); var gs=visibleGroups();
+  if(gs.length===0){ el.innerHTML='<div class="empty">אין קבוצות '+(STATE.role==='coach'?'המשויכות אליך':'')+'.</div>'; return; }
+  el.innerHTML = gs.map(function(g){
+    var mc = STATE.data.members.filter(function(m){return (m.groupIds||[]).indexOf(g.id)>=0;}).length;
+    return '<div class="list-item"><div class="avatar-wrap">'+avatar(coachName(g.coachId),'coach',g.coachId,'sm')+
+      '<div class="aw-txt"><div class="aw-name">'+esc(g.name)+' <span class="pill coach">'+esc(coachName(g.coachId))+'</span></div>'+
+      '<div class="aw-sub">'+esc(slotsLabel(g))+' · '+mc+' חניכים</div></div></div>'+
+      '<div class="mini-actions"><button class="icon-btn" title="הוסף חניך לקבוצה" onclick="openMemberModal(null,\''+g.id+'\')">👤+</button>'+
+      '<button class="icon-btn" onclick="openGroupModal(\''+g.id+'\')">✏️</button>'+
+      '<button class="icon-btn danger" onclick="confirmDeleteGroup(\''+g.id+'\')">🗑️</button></div></div>';
+  }).join('');
+}
+var SLOT_EDIT = [];  // עותק עבודה של האימונים במהלך עריכת קבוצה
+function openGroupModal(id){
+  var g = id ? STATE.data.groups.find(function(x){return x.id===id;}) : null;
+  var defCoach = g ? g.coachId : (STATE.role==='coach'?STATE.coachId:'');
+  var coachOpts = STATE.data.coaches.map(function(c){return '<option value="'+c.id+'" '+(defCoach===c.id?'selected':'')+'>'+esc(c.name)+'</option>';}).join('');
+  SLOT_EDIT = g ? groupSlots(g).map(function(s){return {day:String(s.day), time:fmtTime(s.time)};}) : [{day:String(new Date().getDay()), time:'16:00'}];
+  openModal(
+    '<h3>'+(g?'עריכת קבוצה':'קבוצה חדשה')+'</h3>'+
+    '<label class="fld"><span class="lbl">שם הקבוצה</span><input class="input" id="gName" value="'+esc(g?g.name:'')+'" placeholder="למשל: מתחילים א׳"></label>'+
+    '<label class="fld"><span class="lbl">מאמן אחראי</span><select class="input" id="gCoach">'+(coachOpts||'<option value="">— אין מאמנים —</option>')+'</select></label>'+
+    '<div class="lbl" style="font-size:13px;font-weight:600;margin-bottom:5px">אימונים שבועיים</div>'+
+    '<div id="slotList"></div>'+
+    '<button type="button" class="btn ghost sm" style="margin-bottom:12px" onclick="addSlotRow()">➕ הוסף אימון</button>'+
+    '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">ביטול</button>'+
+    '<button class="btn" onclick="saveGroup('+(g?'\''+g.id+'\'':'null')+')">שמירה</button></div>'
+  );
+  renderSlotRows();
+}
+function readSlotRows(){
+  return Array.prototype.slice.call(document.querySelectorAll('#slotList .slot-row')).map(function(r){
+    return {day:r.querySelector('.slot-day').value, time:r.querySelector('.slot-time').value};
+  });
+}
+function renderSlotRows(){
+  var dayOpts = function(sel){ return DAYS.map(function(d,i){return '<option value="'+i+'" '+(String(sel)===String(i)?'selected':'')+'>'+d+'</option>';}).join(''); };
+  $('slotList').innerHTML = SLOT_EDIT.map(function(s,i){
+    return '<div class="slot-row" style="display:flex;gap:8px;margin-bottom:8px;align-items:center">'+
+      '<select class="input slot-day">'+dayOpts(s.day)+'</select>'+
+      '<select class="input slot-time">'+timeOptions(s.time)+'</select>'+
+      '<button type="button" class="icon-btn danger" title="הסר אימון" onclick="removeSlotRow('+i+')">✕</button></div>';
+  }).join('');
+}
+function addSlotRow(){ SLOT_EDIT = readSlotRows(); SLOT_EDIT.push({day:String(new Date().getDay()), time:'16:00'}); renderSlotRows(); }
+function removeSlotRow(i){
+  SLOT_EDIT = readSlotRows();
+  if(SLOT_EDIT.length<=1){ toast('חייב להיות לפחות אימון אחד','bad'); return; }
+  SLOT_EDIT.splice(i,1); renderSlotRows();
+}
+async function saveGroup(id){
+  var name=$('gName').value.trim(); if(!name){ toast('נא להזין שם קבוצה','bad'); return; }
+  var slots=readSlotRows(); if(!slots.length){ toast('נא להוסיף לפחות אימון אחד','bad'); return; }
+  var p={name:name, coachId:$('gCoach').value, slots:slots, day:slots[0].day, time:slots[0].time};
+  try{
+    if(id){ var d=await api('editGroup',Object.assign({id:id},p)); var i=STATE.data.groups.findIndex(function(x){return x.id===id;}); STATE.data.groups[i]=d; }
+    else{ var g=await api('addGroup',p); STATE.data.groups.push(g); }
+    closeModal(); refreshAll(); toast('נשמר ✓','ok');
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
+}
+function confirmDeleteGroup(id){
+  var g=STATE.data.groups.find(function(x){return x.id===id;});
+  openModal('<h3>מחיקת קבוצה</h3><p>למחוק את "'+esc(g.name)+' · '+esc(coachName(g.coachId))+'"? החניכים יישארו במערכת (ובקבוצות אחרות שלהם), רק השיוך לקבוצה זו יוסר. רשומות נוכחות קודמות יישמרו בגיליון.</p>'+
+    '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">ביטול</button>'+
+    '<button class="btn" style="background:var(--absent)" onclick="doDeleteGroup(\''+id+'\')">מחיקה</button></div>');
+}
+async function doDeleteGroup(id){
+  try{ await api('deleteGroup',{id:id});
+    STATE.data.groups=STATE.data.groups.filter(function(x){return x.id!==id;});
+    STATE.data.members.forEach(function(m){ if(m.groupIds) m.groupIds=m.groupIds.filter(function(gid){return gid!==id;}); });
+    closeModal(); refreshAll(); toast('נמחק','ok');
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
+}
+
+// ---------- ניהול חניכים ----------
+function populateMemberFilter(){
+  var sel=$('memFilter'); var cur=sel.value;
+  sel.innerHTML='<option value="">כל הקבוצות</option>'+visibleGroups().map(function(g){return '<option value="'+g.id+'">'+esc(groupLabel(g.id))+'</option>';}).join('');
+  sel.value=cur;
+}
+function renderMembersManage(){
+  var el=$('membersManageList'); var filter=$('memFilter').value;
+  var ms=STATE.data.members.filter(function(m){
+    if(filter) return (m.groupIds||[]).indexOf(filter)>=0;
+    return STATE.role==='manager' ? (STATE.managerFilter? memberInVisible(m):true) : memberInVisible(m);
+  });
+  if(ms.length===0){ el.innerHTML='<div class="empty">אין חניכים להצגה.</div>'; return; }
+  el.innerHTML = ms.map(function(m){
+    var groups = (m.groupIds||[]).length ? memberGroups(m) : 'ללא קבוצה';
+    return '<div class="list-item"><div class="avatar-wrap">'+avatar(m.name,'member',m.id,'sm')+
+      '<div class="aw-txt"><div class="aw-name">'+esc(m.name)+'</div>'+
+      '<div class="aw-sub">'+esc(groups)+(m.phone?' · '+esc(m.phone):'')+'</div></div></div>'+
+      '<div class="mini-actions"><button class="icon-btn" onclick="openMemberModal(\''+m.id+'\')">✏️</button>'+
+      '<button class="icon-btn danger" onclick="confirmDeleteMember(\''+m.id+'\')">🗑️</button></div></div>';
+  }).join('');
+}
+function openMemberModal(id, presetGroupId){
+  var m = id ? STATE.data.members.find(function(x){return x.id===id;}) : null;
+  var opts = visibleGroups();
+  if(opts.length===0){
+    toast(STATE.role==='coach' ? 'אין לך קבוצות עדיין. צרו קבוצה במסך "קבוצות" או בקשו מהמנהל לשייך אליכם קבוצה.' : 'צריך ליצור קבוצה קודם', 'bad');
+    return;
+  }
+  var checks = opts.map(function(g){
+    var on = m ? (m.groupIds||[]).indexOf(g.id)>=0 : (presetGroupId && String(presetGroupId)===String(g.id));
+    return '<label class="chk-row"><input type="checkbox" value="'+g.id+'" '+(on?'checked':'')+'>'+
+      '<span class="t"><b>'+esc(g.name)+'</b><small>👤 '+esc(coachName(g.coachId))+' · יום '+DAYS[Number(g.day)]+' '+esc(fmtTime(g.time))+'</small></span></label>';
+  }).join('');
+  openModal(
+    '<h3>'+(m?'עריכת חניך':'חניך חדש')+'</h3>'+
+    '<label class="fld"><span class="lbl">שם החניך</span><input class="input" id="mName" value="'+esc(m?m.name:'')+'" placeholder="שם מלא"></label>'+
+    '<div class="lbl" style="font-size:13px;font-weight:600;margin-bottom:5px">קבוצות (אפשר לבחור כמה)</div>'+
+    '<div class="chk-box" id="mGroupsBox">'+checks+'</div>'+
+    '<label class="fld"><span class="lbl">טלפון (רשות)</span><input class="input" id="mPhone" value="'+esc(m?m.phone:'')+'" inputmode="tel" placeholder="050-0000000"></label>'+
+    '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">ביטול</button>'+
+    '<button class="btn" onclick="saveMember('+(m?'\''+m.id+'\'':'null')+')">שמירה</button></div>'
+  );
+}
+function collectMemberGroups(){
+  return Array.prototype.slice.call(document.querySelectorAll('#mGroupsBox input:checked')).map(function(i){return i.value;});
+}
+async function saveMember(id){
+  var name=$('mName').value.trim(); if(!name){ toast('נא להזין שם','bad'); return; }
+  var groupIds=collectMemberGroups();
+  // אם עורכים חניך שכבר משויך לקבוצות שאינן גלויות למשתמש, שומרים אותן כדי לא לאבד מידע
+  if(id){ var ex=STATE.data.members.find(function(x){return x.id===id;}); if(ex){ var vis=visibleGroupIdSet();
+    (ex.groupIds||[]).forEach(function(gid){ if(!vis[gid] && groupIds.indexOf(gid)<0) groupIds.push(gid); }); } }
+  var p={name:name, groupIds:groupIds, phone:$('mPhone').value.trim()};
+  try{
+    if(id){ var d=await api('editMember',Object.assign({id:id},p)); var i=STATE.data.members.findIndex(function(x){return x.id===id;}); STATE.data.members[i]=d; }
+    else{ var mm=await api('addMember',p); STATE.data.members.push(mm); }
+    closeModal(); refreshAll();
+    if(STATE.view==='mark' && STATE.currentGroup){ // עדכון מיידי של רשימת הסימון בלי לאבד סימונים קיימים
+      membersOfGroup(STATE.currentGroup.id).forEach(function(mm2){ if(!STATE.markDraft.hasOwnProperty(mm2.id)) STATE.markDraft[mm2.id]='present'; });
+      renderMarkList();
+    }
+    toast('נשמר ✓','ok');
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
+}
+function confirmDeleteMember(id){
+  var m=STATE.data.members.find(function(x){return x.id===id;});
+  openModal('<h3>מחיקת חניך</h3><p>למחוק את "'+esc(m.name)+'"? הוא יוסר מכל הקבוצות שלו.</p>'+
+    '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">ביטול</button>'+
+    '<button class="btn" style="background:var(--absent)" onclick="doDeleteMember(\''+id+'\')">מחיקה</button></div>');
+}
+async function doDeleteMember(id){
+  try{ await api('deleteMember',{id:id});
+    STATE.data.members=STATE.data.members.filter(function(x){return x.id!==id;});
+    closeModal(); refreshAll(); toast('נמחק','ok');
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
+}
+
+// ---------- ניהול מאמנים ----------
+function renderCoachesManage(){
+  var el=$('coachesManageList'); var cs=STATE.data.coaches;
+  if(STATE.role==='coach'){ el.innerHTML='<div class="empty">ניהול מאמנים זמין למנהל בלבד.<br>עברו למצב "מנהל" מהצ׳יפ למעלה.</div>'; return; }
+  if(cs.length===0){ el.innerHTML='<div class="empty">אין מאמנים עדיין.</div>'; return; }
+  el.innerHTML = cs.map(function(c){
+    var gc=STATE.data.groups.filter(function(g){return g.coachId===c.id;}).length;
+    return '<div class="list-item"><div class="avatar-wrap">'+avatar(c.name,'coach',c.id,'sm')+'<div class="aw-txt"><div class="aw-name">'+esc(c.name)+'</div><div class="aw-sub">'+gc+' קבוצות</div></div></div>'+
+      '<div class="mini-actions"><button class="icon-btn danger" onclick="confirmDeleteCoach(\''+c.id+'\')">🗑️</button></div></div>';
+  }).join('');
+}
+function openCoachModal(){
+  if(STATE.role==='coach'){ toast('רק המנהל יכול להוסיף מאמנים','bad'); return; }
+  openModal('<h3>מאמן חדש</h3>'+
+    '<label class="fld"><span class="lbl">שם המאמן</span><input class="input" id="cName" placeholder="שם מלא"></label>'+
+    '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">ביטול</button>'+
+    '<button class="btn" onclick="saveCoach()">שמירה</button></div>');
+}
+async function saveCoach(){
+  var name=$('cName').value.trim(); if(!name){ toast('נא להזין שם','bad'); return; }
+  try{ var c=await api('addCoach',{name:name}); STATE.data.coaches.push(c);
+    closeModal(); renderCoachesManage(); populateSelects(); toast('נשמר ✓','ok');
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
+}
+function confirmDeleteCoach(id){
+  var c=STATE.data.coaches.find(function(x){return x.id===id;});
+  var gc=STATE.data.groups.filter(function(g){return g.coachId===id;}).length;
+  openModal('<h3>מחיקת מאמן</h3><p>למחוק את "'+esc(c.name)+'"?'+(gc?' <b>שים לב:</b> יש '+gc+' קבוצות המשויכות אליו — הן יישארו ללא מאמן.':'')+'</p>'+
+    '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">ביטול</button>'+
+    '<button class="btn" style="background:var(--absent)" onclick="doDeleteCoach(\''+id+'\')">מחיקה</button></div>');
+}
+async function doDeleteCoach(id){
+  try{ await api('deleteCoach',{id:id});
+    STATE.data.coaches=STATE.data.coaches.filter(function(x){return x.id!==id;});
+    if(STATE.coachId===id){ STATE.coachId=null; localStorage.removeItem('ttc_coach'); }
+    if(STATE.managerFilter===id){ STATE.managerFilter=''; localStorage.setItem('ttc_mgrfilter',''); }
+    updateChips(); closeModal(); refreshAll(); toast('נמחק','ok');
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
+}
+
+// ---------- רשימות נפתחות (מסוננות לפי הנראה) ----------
+function populateSelects(){
+  var gOpts='<option value="">כל הקבוצות'+(STATE.role==='coach'?' שלי':(STATE.managerFilter?' של '+coachName(STATE.managerFilter):''))+'</option>'+
+    visibleGroups().map(function(g){return '<option value="'+g.id+'">'+esc(groupLabel(g.id))+'</option>';}).join('');
+  ['hGroup','rGroup'].forEach(function(idsel){ var s=$(idsel); if(s){ var cur=s.value; s.innerHTML=gOpts; if([''].concat(visibleGroups().map(function(g){return g.id;})).indexOf(cur)>=0) s.value=cur; } });
+}
+
+// ---------- היסטוריה ----------
+function switchHistTab(t){
+  $('hist-records').style.display=(t==='records')?'block':'none';
+  $('hist-report').style.display=(t==='report')?'block':'none';
+  $('ht-records').classList.toggle('active',t==='records');
+  $('ht-report').classList.toggle('active',t==='report');
+}
+
+let LAST_RECORDS=[];
+function setHistView(v){
+  STATE.histView=v;
+  $('hv-date').classList.toggle('active', v==='date');
+  $('hv-member').classList.toggle('active', v==='member');
+  renderHistory();
+}
+async function loadHistory(){
+  var from=$('hFrom').value, to=$('hTo').value, groupId=$('hGroup').value;
+  $('histViewTabs').style.display='none';
+  $('histResult').innerHTML='<div class="loader"><div class="spinner"></div></div>';
+  try{
+    var rows=await api('getHistory',{from:from||undefined,to:to||undefined,groupId:groupId||undefined});
+    // אם לא נבחרה קבוצה — הגבלה לקבוצות הנראות למשתמש
+    if(!groupId){ var vis=visibleGroupIdSet(); rows=rows.filter(function(r){return vis[r.groupId];}); }
+    LAST_RECORDS=rows;
+    renderHistory();
+  }catch(e){ $('histResult').innerHTML='<div class="banner err">שגיאה: '+esc(e.message)+'</div>'; }
+}
+function niceDate(iso){ // 2026-07-05 -> {day:'יום ראשון', num:'05/07/2026'}
+  var p=String(iso).split('-');
+  var d=new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
+  return {day:'יום '+DAYS[d.getDay()], num:p[2]+'/'+p[1]+'/'+p[0]};
+}
+function renderHistory(){
+  var rows=LAST_RECORDS;
+  if(!rows || rows.length===0){ $('histViewTabs').style.display='none'; $('histResult').innerHTML='<div class="empty">לא נמצאו רשומות לסינון זה.</div>'; return; }
+  $('histViewTabs').style.display='flex';
+  if(STATE.histView==='member') renderHistByMember(rows); else renderHistByDate(rows);
+}
+function renderHistByDate(rows){
+  var byDate={};
+  rows.forEach(function(r){ (byDate[r.date]=byDate[r.date]||[]).push(r); });
+  var dates=Object.keys(byDate).sort(function(a,b){return a<b?1:-1;});
+  var html=dates.map(function(d){
+    var list=byDate[d].slice().sort(function(a,b){return nameOfMember(a.memberId)>nameOfMember(b.memberId)?1:-1;});
+    var came=list.filter(function(r){return r.status!=='absent';}).length;
+    var nd=niceDate(d);
+    var rowsHtml=list.map(function(r){
+      return '<div class="hrow"><div class="avatar-wrap">'+avatar(nameOfMember(r.memberId),'member',r.memberId,'sm')+
+        '<div class="aw-txt"><div class="aw-name">'+esc(nameOfMember(r.memberId))+'</div>'+
+        '<div class="aw-sub">'+esc(groupLabel(r.groupId))+'</div></div></div>'+statusChip(r.status)+'</div>';
+    }).join('');
+    return '<div class="card"><div class="date-head"><div><div class="dh-title">'+esc(nd.day)+'</div>'+
+      '<div class="dh-sub">'+esc(nd.num)+'</div></div><span class="dh-sum">'+came+'/'+list.length+' הגיעו</span></div>'+rowsHtml+'</div>';
+  }).join('');
+  $('histResult').innerHTML=html;
+}
+function renderHistByMember(rows){
+  var byMember={};
+  rows.forEach(function(r){ (byMember[r.memberId]=byMember[r.memberId]||[]).push(r); });
+  var ids=Object.keys(byMember).sort(function(a,b){return nameOfMember(a)>nameOfMember(b)?1:-1;});
+  var html=ids.map(function(mid){
+    var list=byMember[mid].slice().sort(function(a,b){return a.date<b.date?1:-1;});
+    var came=list.filter(function(r){return r.status!=='absent';}).length;
+    var rowsHtml=list.map(function(r){
+      var nd=niceDate(r.date);
+      return '<div class="hrow"><div class="avatar-wrap"><div class="aw-txt"><div class="aw-name">'+esc(nd.num)+'</div>'+
+        '<div class="aw-sub">'+esc(nd.day)+' · '+esc(groupLabel(r.groupId))+'</div></div></div>'+statusChip(r.status)+'</div>';
+    }).join('');
+    return '<div class="card"><div class="date-head"><div class="avatar-wrap">'+avatar(nameOfMember(mid),'member',mid)+
+      '<div class="aw-txt"><div class="dh-title">'+esc(nameOfMember(mid))+'</div></div></div>'+
+      '<span class="dh-sum">'+came+'/'+list.length+' הגיע</span></div>'+rowsHtml+'</div>';
+  }).join('');
+  $('histResult').innerHTML=html;
+}
+
+// ---------- דוח חניכים חודשי (מצטבר על פני כל הקבוצות) ----------
+let LAST_REPORT=null;
+async function loadReport(){
+  var month=$('rMonth').value; var groupId=$('rGroup').value;
+  if(!month){ toast('בחרו חודש','bad'); return; }
+  var from=month+'-01';
+  var y=Number(month.split('-')[0]), mo=Number(month.split('-')[1]);
+  var last=new Date(y,mo,0).getDate();
+  var to=month+'-'+String(last).padStart(2,'0');
+  $('reportResult').innerHTML='<div class="loader"><div class="spinner"></div></div>';
+  try{
+    var rows=await api('getHistory',{from:from,to:to,groupId:groupId||undefined});
+    // מגבילים לקבוצות הרלוונטיות (הקבוצה הנבחרת, או כל הקבוצות הנראות)
+    var scopeIds = groupId ? [groupId] : visibleGroups().map(function(g){return g.id;});
+    var scopeSet={}; scopeIds.forEach(function(id){scopeSet[id]=1;});
+    rows=rows.filter(function(r){return scopeSet[r.groupId];});
+
+    // חניכים בטווח: אלו שמשויכים לקבוצות שבתחום
+    var members = STATE.data.members.filter(function(m){ return (m.groupIds||[]).some(function(gid){return scopeSet[gid];}); });
+    var stats={}; members.forEach(function(m){ stats[m.id]={id:m.id, name:m.name, groups:memberGroups(m), present:0, late:0, absent:0, sessions:[]}; });
+    // צבירה — כל רשומה היא מפגש ייחודי (קבוצה+תאריך), ולכן אין ספירה כפולה באותו מפגש
+    rows.forEach(function(r){
+      if(!stats[r.memberId]) stats[r.memberId]={id:r.memberId, name:nameOfMember(r.memberId), groups:'', present:0,late:0,absent:0, sessions:[]};
+      if(r.status==='present')stats[r.memberId].present++; else if(r.status==='late')stats[r.memberId].late++; else if(r.status==='absent')stats[r.memberId].absent++;
+      stats[r.memberId].sessions.push({date:r.date, status:r.status, groupId:r.groupId});
+    });
+    var arr=Object.keys(stats).map(function(k){var s=stats[k]; s.attended=s.present+s.late; s.total=s.present+s.late+s.absent; s.sessions.sort(function(a,b){return a.date<b.date?1:-1;}); return s;});
+    arr.sort(function(a,b){ return b.attended-a.attended; });
+    LAST_REPORT={month:month, scope:(groupId?groupLabel(groupId):(STATE.role==='coach'?'הקבוצות שלי':(STATE.managerFilter?coachName(STATE.managerFilter):'כל הקבוצות'))), rows:arr};
+    if(arr.length===0){ $('reportResult').innerHTML='<div class="empty">אין נתונים לחודש זה.</div>'; return; }
+    var html='<div class="sub" style="margin:0 2px 10px">דוח '+esc(month)+' · '+esc(LAST_REPORT.scope)+' · הקישו על חניך לפירוט</div>';
+    html+=arr.map(function(s){
+      var detail=s.sessions.map(function(x){ var nd=niceDate(x.date);
+        return '<div class="hrow"><div class="avatar-wrap"><div class="aw-txt"><div class="aw-name">'+esc(nd.num)+'</div>'+
+          '<div class="aw-sub">'+esc(nd.day)+' · '+esc(groupLabel(x.groupId))+'</div></div></div>'+statusChip(x.status)+'</div>'; }).join('')
+        || '<div class="sub" style="padding:6px 4px">אין מפגשים בחודש זה.</div>';
+      return '<div class="card acc-card" style="padding:6px 14px">'+
+        '<div class="acc-head" onclick="toggleReportRow(this)"><div class="avatar-wrap">'+avatar(s.name,'member',s.id)+
+        '<div class="aw-txt"><div class="aw-name">'+esc(s.name)+'</div><div class="aw-sub">הגיע '+s.attended+' מתוך '+s.total+' מפגשים</div></div></div>'+
+        '<div class="acc-counts"><span class="cnt" style="color:var(--present);background:#e6f6ee">'+s.attended+'</span>'+
+        '<span class="cnt" style="color:var(--late);background:#fdf2e0">'+s.late+'</span>'+
+        '<span class="cnt" style="color:var(--absent);background:#fdeaea">'+s.absent+'</span></div>'+
+        '<span class="caret">‹</span></div>'+
+        '<div class="acc-detail">'+detail+'</div></div>';
+    }).join('');
+    html+='<div class="sub" style="margin:8px 2px">"הגיע" = נוכח + איחר · ירוק=הגיע · כתום=איחר · אדום=נעדר</div>';
+    $('reportResult').innerHTML=html;
+  }catch(e){ $('reportResult').innerHTML='<div class="banner err">שגיאה: '+esc(e.message)+'</div>'; }
+}
+function toggleReportRow(headEl){
+  headEl.classList.toggle('open');
+  var d=headEl.parentNode.querySelector('.acc-detail');
+  if(d) d.classList.toggle('open');
+}
+
+// ---------- ייצוא לאקסל ----------
+function downloadSheet(rows, sheetName, fileName){
+  if(typeof XLSX==='undefined'){ toast('ספריית הייצוא לא נטענה. בדקו חיבור אינטרנט.','bad'); return; }
+  var ws=XLSX.utils.aoa_to_sheet(rows);
+  var wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,sheetName);
+  XLSX.writeFile(wb,fileName);
+}
+function exportRecords(){
+  if(!LAST_RECORDS.length){ toast('אין נתונים לייצוא. לחצו "הצג" קודם.','bad'); return; }
+  var rows=[['תאריך','קבוצה','מאמן','חניך','סטטוס','סימן','חותמת זמן']];
+  LAST_RECORDS.forEach(function(r){ var g=STATE.data.groups.find(function(x){return x.id===r.groupId;});
+    rows.push([r.date, nameOfGroup(r.groupId), g?coachName(g.coachId):'', nameOfMember(r.memberId), STATUS_HE[r.status]||r.status, r.markedBy||'', r.timestamp||'']); });
+  downloadSheet(rows,'נוכחות','attendance-records.xlsx');
+}
+function exportReport(){
+  if(!LAST_REPORT){ toast('הפיקו דוח קודם.','bad'); return; }
+  var rows=[['חניך','קבוצות','הגיע','איחר','נעדר','סה״כ מפגשים']];
+  LAST_REPORT.rows.forEach(function(s){ rows.push([s.name,s.groups,s.attended,s.late,s.absent,s.total]); });
+  downloadSheet(rows,'דוח '+LAST_REPORT.month,'report-'+LAST_REPORT.month+'.xlsx');
+}
+
+// ---------- הפעלה ----------
+$('rMonth').value = todayISO().slice(0,7);
+$('hFrom').value = todayISO().slice(0,8)+'01';
+$('hTo').value = todayISO();
+init();
+</script>
+</body>
+</html>
