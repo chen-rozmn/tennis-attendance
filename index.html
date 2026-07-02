@@ -333,7 +333,7 @@
         <label class="fld"><span class="lbl" id="loginPassLbl">סיסמה</span>
           <span class="pass-wrap">
             <input class="input" type="password" id="loginPass" placeholder="הזינו סיסמה" autocomplete="off">
-            <button type="button" class="pass-eye" id="loginEye" onclick="toggleLoginPass()" aria-label="הצג או הסתר סיסמה">👁</button>
+            <button type="button" class="pass-eye" id="loginEye" onclick="toggleLoginPass()" aria-label="הצג או הסתר סיסמה"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
           </span></label>
         <button class="btn" onclick="doLogin()">התחבר</button>
         <div id="loginMsg" style="margin-top:10px"></div>
@@ -591,19 +591,37 @@ function visibleGroupIdSet(){ var s={}; visibleGroups().forEach(function(g){s[g.
 function memberInVisible(m){ var s=visibleGroupIdSet(); return (m.groupIds||[]).some(function(id){return s[id];}); }
 
 // קריאה ל-API. שולח JSON כ-text/plain כדי להימנע מ-preflight (CORS).
+// שיפורי מהירות/יציבות: timeout כדי לא להיתקע, וניסיון חוזר אוטומטי לקריאות (get*) בלבד
+// (לא חוזרים על פעולות כתיבה כדי לא לשכפל נתונים).
 async function api(action, params){
   var url = getApiUrl();
   if(!url) throw new Error('כתובת ה-API אינה מוגדרת');
-  var res = await fetch(url, {
-    method:'POST', redirect:'follow',
-    headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body: JSON.stringify(Object.assign({action:action}, params||{}))
-  });
-  var text = await res.text();
-  var json;
-  try{ json = JSON.parse(text); }catch(e){ throw new Error('תשובה לא תקינה מהשרת. ודאו שכתובת ה-Web App נכונה.'); }
-  if(!json.ok) throw new Error(json.error || 'שגיאה לא ידועה מהשרת');
-  return json.data;
+  var isRead = /^get/.test(action);
+  var attempts = isRead ? 3 : 1;
+  var lastErr;
+  for(var i=0; i<attempts; i++){
+    var ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+    var to = ctrl ? setTimeout(function(){ ctrl.abort(); }, 20000) : null;
+    try{
+      var res = await fetch(url, {
+        method:'POST', redirect:'follow',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify(Object.assign({action:action}, params||{})),
+        signal: ctrl ? ctrl.signal : undefined
+      });
+      if(to) clearTimeout(to);
+      var text = await res.text();
+      var json;
+      try{ json = JSON.parse(text); }catch(e){ throw new Error('תשובה לא תקינה מהשרת. ודאו שכתובת ה-Web App נכונה.'); }
+      if(!json.ok) throw new Error(json.error || 'שגיאה לא ידועה מהשרת');
+      return json.data;
+    }catch(e){
+      if(to) clearTimeout(to);
+      lastErr = e;
+      if(i < attempts-1) await new Promise(function(r){ setTimeout(r, 700); });  // המתנה קצרה לפני ניסיון חוזר
+    }
+  }
+  throw lastErr;
 }
 // מבטיח ש-STATE.data תמיד יכיל את שלושת המערכים (מונע קריסה אם השרת החזיר תשובה חלקית)
 function normalizeData(d){
@@ -851,18 +869,38 @@ async function restoreSession(groupId){
 // ---------- אתחול + התחברות ----------
 var LOGIN_USERS = [];
 var LOGIN_MODE = 'staff';
+// מטמון מקומי של getAll — טעינה מיידית בכניסות חוזרות (stale-while-revalidate)
+function cacheGetAll(d){ try{ localStorage.setItem('ttc_data', JSON.stringify(d)); }catch(e){} }
+function readGetAllCache(){ try{ var s=localStorage.getItem('ttc_data'); return s?JSON.parse(s):null; }catch(e){ return null; } }
+function routeInitial(){
+  var sess=null; try{ sess=JSON.parse(localStorage.getItem('ttc_session')||'null'); }catch(e){}
+  if(sess && sess.role && sessionValid(sess)){ enterApp(sess); return; }
+  showLogin();
+}
 async function init(){
   show('loading');
   $('tabbar').style.display='none';
   if(!getApiUrl()){ show('setup'); return; }
+  STATE.managerFilter = localStorage.getItem('ttc_mgrfilter')||'';
+  // getUsers נטען ברקע ואינו חוסם את ההתחברות (מהירות)
+  api('getUsers').then(function(u){ LOGIN_USERS=u||[]; if(STATE.view==='login') setLoginMode(LOGIN_MODE); }).catch(function(){ LOGIN_USERS=LOGIN_USERS||[]; });
+
+  var cached = readGetAllCache();
+  if(cached){
+    // הצגה מיידית מהמטמון + רענון שקט ברקע
+    STATE.data = normalizeData(cached);
+    routeInitial();
+    api('getAll').then(function(d){
+      STATE.data = normalizeData(d); cacheGetAll(d);
+      if(['home','attendance','history','manage','mark'].indexOf(STATE.view)>=0) refreshAll();
+    }).catch(function(){ /* משתמשים בינתיים במטמון */ });
+    return;
+  }
+  // אין מטמון — טעינה ראשונה (עם ניסיונות חוזרים ב-api)
   try{
-    STATE.data = normalizeData(await api('getAll'));
-    try{ LOGIN_USERS = await api('getUsers'); }catch(e){ LOGIN_USERS = []; }  // ידרוש פריסה מחדש של Code.gs
-    STATE.managerFilter = localStorage.getItem('ttc_mgrfilter')||'';
-    // שחזור סשן קיים
-    var sess = null; try{ sess = JSON.parse(localStorage.getItem('ttc_session')||'null'); }catch(e){}
-    if(sess && sess.role && sessionValid(sess)){ enterApp(sess); return; }
-    showLogin();
+    var d = await api('getAll');
+    STATE.data = normalizeData(d); cacheGetAll(d);
+    routeInitial();
   }catch(err){
     $('errText').textContent = 'שגיאה בטעינת הנתונים: ' + err.message;
     show('error');
@@ -891,7 +929,7 @@ function showLogin(){
   setLoginMode(LOGIN_MODE);
   $('loginMsg').innerHTML='';
   if($('loginPass')){ $('loginPass').value=''; $('loginPass').type='password'; }
-  if($('loginEye')) $('loginEye').textContent='👁';
+  if($('loginEye')) $('loginEye').innerHTML=EYE_OPEN;
   show('login');
 }
 function loginNamesFor(mode){
@@ -914,10 +952,13 @@ function setLoginMode(mode){
   $('loginPassLbl').textContent = (mode==='trainee') ? 'סיסמה (רשות)' : 'סיסמה';
   $('loginMsg').innerHTML='';
 }
+// אייקוני עין: פתוחה = "הצג", סגורה/חצויה = "הסתר"
+var EYE_OPEN = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+var EYE_OFF  = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20C5 20 1 12 1 12a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 function toggleLoginPass(){
   var i=$('loginPass'), e=$('loginEye');
-  if(i.type==='password'){ i.type='text'; e.textContent='🙈'; }
-  else { i.type='password'; e.textContent='👁'; }
+  if(i.type==='password'){ i.type='text'; e.innerHTML=EYE_OFF; }
+  else { i.type='password'; e.innerHTML=EYE_OPEN; }
 }
 async function doLogin(){
   var name = $('loginName').value;
