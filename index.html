@@ -246,7 +246,7 @@
   .kpi{background:var(--surface); border-radius:16px; padding:12px 8px; text-align:center; box-shadow:0 2px 8px rgba(18,33,26,.05);}
   .kpi .v{font-family:var(--font-head); font-weight:800; font-size:23px; color:var(--green); line-height:1;}
   .kpi .l{font-size:11px; color:var(--muted); margin-top:4px; font-weight:600;}
-  .kpi.warn{background:#fdeede;} .kpi.warn .v{color:var(--late);}
+  .kpi.warn{background:#fbe3e1;} .kpi.warn .v{color:#C2413B;}
 
   /* מסך בית */
   .home-hero{background:var(--green); color:#fff; border-radius:var(--r); padding:20px; margin-bottom:16px;}
@@ -279,7 +279,7 @@
   /* צ׳יפ סטטוס מפגש */
   .sess-mini{display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:800; padding:3px 8px; border-radius:999px;}
   .coach-chips{display:flex; gap:5px; flex-wrap:wrap; flex:0 0 auto;}
-  .miss-alert{width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:right; margin-bottom:14px; padding:12px 14px; border:none; border-radius:14px; background:#fdeede; color:#B4530A; font-family:inherit; font-weight:800; font-size:14px; cursor:pointer; box-shadow:inset 0 0 0 1px #f6d3ad;}
+  .miss-alert{width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:right; margin-bottom:14px; padding:12px 14px; border:none; border-radius:14px; background:#fbe3e1; color:#C2413B; font-family:inherit; font-weight:800; font-size:14px; cursor:pointer; box-shadow:inset 0 0 0 1px #f0c4c0;}
   .miss-alert:active{transform:scale(.99);}
   .miss-alert .ma-go{font-weight:800; white-space:nowrap; opacity:.85;}
   .live-pulse{width:8px; height:8px; border-radius:50%; background:var(--late); box-shadow:0 0 0 0 rgba(224,147,15,.6); animation:pulse 1.4s infinite;}
@@ -663,11 +663,11 @@ var SESS_META = {
   done:    {label:'בוצע',        color:'var(--present)', bg:'#e6f6ee'},
   ongoing: {label:'מתרחש כרגע',  color:'var(--late)',    bg:'#fdf2e0'},
   upcoming:{label:'טרם התחיל',   color:'var(--muted)',   bg:'#eef1ef'},
-  missed:  {label:'ללא נוכחות',   color:'#B4530A',        bg:'#fdeede'},
-  canceled:{label:'בוטל',        color:'var(--absent)',  bg:'#fdeaea'}
+  missed:  {label:'ללא נוכחות',   color:'#C2413B',        bg:'#fbe3e1'},
+  canceled:{label:'בוטל',        color:'#5B6B7A',        bg:'#eceff3'}
 };
 // נקודות בהירות לצ׳יפים על הרקע הירוק בכותרת (נראות טובה)
-var HERO_DOT = { done:'#7CE0A3', ongoing:'#ffb454', upcoming:'#dfe7e2', missed:'#ff9d4d', canceled:'#ff7b7b' };
+var HERO_DOT = { done:'#7CE0A3', ongoing:'#ffb454', upcoming:'#dfe7e2', missed:'#ef5350', canceled:'#9fb0bf' };
 var SESSION_MIN = 60; // משך אימון: שעה
 function nowMinutes(){ var d=new Date(); return d.getHours()*60 + d.getMinutes(); }
 function timeToMin(t){ t=fmtTime(t); var p=String(t).split(':'); return (Number(p[0])||0)*60 + (Number(p[1])||0); }
