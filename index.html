@@ -578,12 +578,21 @@ function courtLabel(court){ court=String(court==null?'':court).trim(); if(!court
 // סקלטון־לואודר — מונע מסך ריק בזמן טעינה
 function skelCards(n){ var s=''; for(var i=0;i<(n||3);i++){ s+='<div class="skel skel-card"></div>'; } return s; }
 function skelRows(n){ var s=''; for(var i=0;i<(n||3);i++){ s+='<div class="att-row"><div class="avatar-wrap"><span class="skel skel-av"></span><span class="skel skel-line"></span></div><span class="skel skel-seg"></span></div>'; } return s; }
-// תזכורת למאמן בטלגרם — פותח את טלגרם עם הודעה מוכנה, המנהל בוחר את המאמן ושולח (בלי הגדרות)
-function sendCoachReminder(coachId, groupId, time){
+// שם המשתמש של בוט הטלגרם (ציבורי) — לבניית קישורי חיבור למאמנים
+var TG_BOT = 'kfar_tennis_bot';
+// תזכורת למאמן: אם חיבר טלגרם — הבוט שולח לו ישירות ובפרטי; אחרת נפתחת שליחה ידנית
+async function sendCoachReminder(coachId, groupId, time){
   var g=STATE.data.groups.find(function(x){return x.id===groupId;});
   var gname=g?g.name:''; var cn=coachName(coachId);
-  var msg='תזכורת 🎾 '+cn+', טרם מולאה נוכחות לאימון "'+gname+'" בשעה '+time+' היום. אפשר למלא כאן: '+location.origin;
-  window.open('https://t.me/share/url?url='+encodeURIComponent(location.origin)+'&text='+encodeURIComponent(msg), '_blank');
+  var msg='תזכורת 🎾 '+cn+', טרם מולאה נוכחות לאימון "'+gname+'" בשעה '+time+' היום. נא למלא באפליקציה.';
+  var c=STATE.data.coaches.find(function(x){return String(x.id)===String(coachId);});
+  if(c && c.tgConnected){
+    try{ await api('notifyCoach',{coachId:coachId, text:msg}); toast('נשלחה תזכורת ל'+cn+' בטלגרם ✓','ok'); }
+    catch(e){ toast('שגיאה: '+e.message,'bad'); }
+  } else {
+    toast(cn+' עדיין לא חיבר טלגרם — נפתחת שליחה ידנית','bad');
+    window.open('https://t.me/share/url?url='+encodeURIComponent(location.origin)+'&text='+encodeURIComponent(msg), '_blank');
+  }
 }
 var COURT_COUNT = 8; // מספר המגרשים במתחם
 function courtOpts(sel){ var o='<option value="">— ללא מגרש —</option>'; for(var i=1;i<=COURT_COUNT;i++){ o+='<option value="'+i+'" '+(String(sel)===String(i)?'selected':'')+'>מגרש '+i+'</option>'; } return o; }
@@ -1678,11 +1687,32 @@ function renderCoachesManage(){
   var el=$('coachesManageList'); var cs=STATE.data.coaches;
   if(STATE.role==='coach'){ el.innerHTML='<div class="empty">ניהול מאמנים זמין למנהל בלבד.<br>עברו למצב "מנהל" מהצ׳יפ למעלה.</div>'; return; }
   if(cs.length===0){ el.innerHTML='<div class="empty">אין מאמנים עדיין.</div>'; return; }
-  el.innerHTML = cs.map(function(c){
-    var gc=STATE.data.groups.filter(function(g){return g.coachId===c.id;}).length;
-    return '<div class="list-item"><div class="avatar-wrap">'+avatar(c.name,'coach',c.id,'sm')+'<div class="aw-txt"><div class="aw-name">'+esc(c.name)+'</div><div class="aw-sub">'+gc+' קבוצות</div></div></div>'+
-      '<div class="mini-actions"><button class="icon-btn danger" onclick="confirmDeleteCoach(\''+c.id+'\')">🗑️</button></div></div>';
-  }).join('');
+  el.innerHTML =
+    '<div class="sub" style="margin:0 2px 8px">חיבור טלגרם: שלחו לכל מאמן את קישור החיבור שלו; הוא לוחץ Start ואז "רענן חיבורים".</div>'+
+    '<button class="btn ghost sm" style="margin-bottom:10px" onclick="tgSyncCoaches()">🔄 רענן חיבורי טלגרם</button>'+
+    cs.map(function(c){
+      var gc=STATE.data.groups.filter(function(g){return g.coachId===c.id;}).length;
+      var tg = c.tgConnected
+        ? '<span class="ttag" style="color:var(--present)">✓ טלגרם מחובר</span> · <a href="#" onclick="event.preventDefault();tgTest(\''+c.id+'\')">בדיקה</a>'
+        : '<a href="#" onclick="event.preventDefault();tgCopyLink(\''+c.id+'\')">📋 העתק קישור חיבור טלגרם</a>';
+      return '<div class="list-item"><div class="avatar-wrap">'+avatar(c.name,'coach',c.id,'sm')+'<div class="aw-txt"><div class="aw-name">'+esc(c.name)+'</div><div class="aw-sub">'+gc+' קבוצות · '+tg+'</div></div></div>'+
+        '<div class="mini-actions"><button class="icon-btn danger" onclick="confirmDeleteCoach(\''+c.id+'\')">🗑️</button></div></div>';
+    }).join('');
+}
+async function tgSyncCoaches(){
+  try{ var r=await api('tgSync');
+    (r.coaches||[]).forEach(function(rc){ var c=STATE.data.coaches.find(function(x){return String(x.id)===String(rc.id);}); if(c) c.tgConnected=rc.tgConnected; });
+    renderCoachesManage(); toast('מחוברים כעת: '+(r.coaches||[]).filter(function(x){return x.tgConnected;}).length+' מאמנים','ok');
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
+}
+function tgCopyLink(coachId){
+  var link='https://t.me/'+TG_BOT+'?start='+coachId;
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(link).then(function(){ toast('הקישור הועתק — שלחו למאמן','ok'); }, function(){ prompt('העתיקו את הקישור ושלחו למאמן:', link); }); }
+  else { prompt('העתיקו את הקישור ושלחו למאמן:', link); }
+}
+async function tgTest(coachId){
+  try{ await api('notifyCoach',{coachId:coachId, text:'בדיקה 🎾 — הבוט מחובר בהצלחה!'}); toast('נשלחה הודעת בדיקה ✓','ok'); }
+  catch(e){ toast('שגיאה: '+e.message,'bad'); }
 }
 function openCoachModal(){
   if(STATE.role==='coach'){ toast('רק המנהל יכול להוסיף מאמנים','bad'); return; }

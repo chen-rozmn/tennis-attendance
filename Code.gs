@@ -18,7 +18,7 @@
 
 // ====== הגדרות לשוניות ======
 var SHEETS = {
-  Coaches:     ['id', 'name'],
+  Coaches:     ['id', 'name', 'tg'],
   Groups:      ['id', 'name', 'day', 'time', 'coachId', 'slots'],
   Members:     ['id', 'name', 'groupId', 'phone', 'trial', 'left'],
   Attendance:  ['date', 'groupId', 'memberId', 'status', 'markedBy', 'timestamp'],
@@ -81,6 +81,9 @@ function route(action, p) {
       case 'reportAbsence':   return jsonOut({ ok: true, data: reportAbsence_(p) });
       case 'unreportAbsence': return jsonOut({ ok: true, data: unreportAbsence_(p) });
       case 'getAbsences':     return jsonOut({ ok: true, data: getAbsences_(p) });
+
+      case 'tgSync':          return jsonOut({ ok: true, data: tgSync_() });
+      case 'notifyCoach':     return jsonOut({ ok: true, data: notifyCoach_(p) });
 
       default:              return jsonOut({ ok: false, error: 'פעולה לא מוכרת: ' + action });
     }
@@ -248,7 +251,7 @@ function getAll_() {
   });
 
   return {
-    coaches: readAll_('Coaches').map(function (c) { return { id: String(c.id), name: c.name }; }),
+    coaches: readAll_('Coaches').map(function (c) { return { id: String(c.id), name: c.name, tgConnected: !!(c.tg && String(c.tg).trim()) }; }),
     groups:  readAll_('Groups').map(function (g) {
       var slots = parseSlots_(g.slots);
       if (!slots.length) slots = [{ day: String(g.day), time: fmtTimeGs_(g.time) }];
@@ -266,8 +269,8 @@ function getAll_() {
 function addCoach_(p) {
   if (!p.name) throw new Error('חסר שם מאמן');
   var id = newId_('c');
-  sheet_('Coaches').appendRow([id, p.name]);
-  return { id: id, name: p.name };
+  sheet_('Coaches').appendRow([id, p.name, '']);
+  return { id: id, name: p.name, tgConnected: false };
 }
 
 function deleteCoach_(p) {
@@ -275,6 +278,91 @@ function deleteCoach_(p) {
   if (row < 0) throw new Error('מאמן לא נמצא');
   sheet_('Coaches').deleteRow(row);
   return { id: p.id, deleted: true };
+}
+
+// ====== טלגרם (תזכורות למאמנים) ======
+// הטוקן נשמר ב-Script Properties תחת המפתח TG_TOKEN (לא נשמר בקוד).
+
+function tgToken_() {
+  var t = PropertiesService.getScriptProperties().getProperty('TG_TOKEN');
+  if (!t) throw new Error('טוקן טלגרם לא הוגדר (Script Properties → TG_TOKEN)');
+  return t;
+}
+
+function tgSend_(chatId, text) {
+  var res = UrlFetchApp.fetch('https://api.telegram.org/bot' + tgToken_() + '/sendMessage', {
+    method: 'post', contentType: 'application/json',
+    payload: JSON.stringify({ chat_id: String(chatId), text: text }),
+    muteHttpExceptions: true
+  });
+  var j = JSON.parse(res.getContentText());
+  if (!j.ok) throw new Error('טלגרם: ' + (j.description || 'שגיאה'));
+  return true;
+}
+
+// קליטת chat_id של מאמנים: כל מאמן פותח t.me/kfar_tennis_bot?start=<coachId> ולוחץ Start.
+// הפעולה קוראת getUpdates ומקשרת כל chat_id למאמן לפי ה-coachId שנשלח ב-/start.
+function tgSync_() {
+  var res = UrlFetchApp.fetch('https://api.telegram.org/bot' + tgToken_() + '/getUpdates', { muteHttpExceptions: true });
+  var j = JSON.parse(res.getContentText());
+  var linked = 0;
+  if (j.ok) {
+    (j.result || []).forEach(function (u) {
+      var m = u.message; if (!m || !m.text || !m.chat) return;
+      var mt = /^\/start\s+(\S+)/.exec(String(m.text));
+      if (!mt) return;
+      var coachId = mt[1];
+      var row = findRowById_('Coaches', coachId);
+      if (row > 0) { sheet_('Coaches').getRange(row, 3, 1, 1).setValue(String(m.chat.id)); linked++; }
+    });
+  }
+  return { linked: linked, coaches: readAll_('Coaches').map(function (c) { return { id: String(c.id), name: c.name, tgConnected: !!(c.tg && String(c.tg).trim()) }; }) };
+}
+
+function notifyCoach_(p) {
+  var c = readAll_('Coaches').filter(function (x) { return String(x.id) === String(p.coachId); })[0];
+  if (!c) throw new Error('מאמן לא נמצא');
+  if (!c.tg || !String(c.tg).trim()) throw new Error('המאמן עדיין לא חיבר טלגרם');
+  var text = p.text || ('תזכורת 🎾 ' + c.name + ', יש למלא נוכחות באפליקציה.');
+  tgSend_(c.tg, text);
+  return { ok: true, coachId: String(c.id) };
+}
+
+function timeToMinGs_(t) { var pr = String(fmtTimeGs_(t)).split(':'); return (Number(pr[0]) || 0) * 60 + (Number(pr[1]) || 0); }
+
+// סריקת אימונים שהסתיימו היום ללא מילוי נוכחות ושליחת תזכורת לכל מאמן מחובר
+function sendMissingReminders_() {
+  var now = new Date();
+  var wd = now.getDay();
+  var todayStr = fmtDateGs_(now);
+  var nowMin = now.getHours() * 60 + now.getMinutes();
+  var attToday = {}; readAll_('Attendance').forEach(function (r) { if (fmtDateGs_(r.date) === todayStr) attToday[String(r.groupId)] = true; });
+  var cancToday = {}; readAll_('Sessions').forEach(function (s) { if (fmtDateGs_(s.date) === todayStr && s.status === 'canceled') cancToday[String(s.groupId)] = true; });
+  var coaches = {}; readAll_('Coaches').forEach(function (c) { coaches[String(c.id)] = c; });
+  var sent = 0;
+  readAll_('Groups').forEach(function (g) {
+    var slots = parseSlots_(g.slots); if (!slots.length) slots = [{ day: String(g.day), time: fmtTimeGs_(g.time) }];
+    slots.forEach(function (s) {
+      if (String(s.day) !== String(wd)) return;
+      if (nowMin < timeToMinGs_(s.time) + 60) return;    // עדיין לא הסתיים
+      if (attToday[String(g.id)]) return;                // כבר מולא
+      if (cancToday[String(g.id)]) return;               // בוטל
+      var c = coaches[String(g.coachId)];
+      if (c && c.tg && String(c.tg).trim()) {
+        try { tgSend_(c.tg, 'תזכורת 🎾 ' + c.name + ', טרם מולאה נוכחות לאימון "' + g.name + '" בשעה ' + fmtTimeGs_(s.time) + ' היום. נא למלא באפליקציה.'); sent++; } catch (e) {}
+      }
+    });
+  });
+  return sent;
+}
+
+function dailyReminderJob_() { sendMissingReminders_(); }
+
+// הרצה חד-פעמית מהעורך כדי ליצור טריגר יומי ב-21:00
+function setupDailyReminder_() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'dailyReminderJob_') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('dailyReminderJob_').timeBased().atHour(21).everyDays(1).create();
+  return true;
 }
 
 // ====== קבוצות ======
