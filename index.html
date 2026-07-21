@@ -169,6 +169,12 @@
   .seg-tabs button{flex:1; padding:9px; border-radius:9px; font-weight:700; font-size:13px; color:var(--muted);}
   .seg-tabs button.active{background:#fff; color:var(--green); box-shadow:var(--shadow);}
   .ttag{font-size:.82em; font-weight:700; color:#2C6E8F;} .ttag.muted{color:var(--muted);}
+  .skel{background:linear-gradient(90deg,#eef1ef 25%,#e2e8e4 37%,#eef1ef 63%); background-size:400% 100%; animation:shimmer 1.3s ease infinite; border-radius:8px; display:inline-block;}
+  @keyframes shimmer{0%{background-position:100% 0;}100%{background-position:0 0;}}
+  .skel-card{display:block; height:62px; width:100%; margin-bottom:12px; border-radius:16px;}
+  .skel-av{width:34px; height:34px; border-radius:10px;}
+  .skel-line{width:120px; height:14px; margin-inline-start:8px; vertical-align:middle;}
+  .skel-seg{width:150px; height:30px; border-radius:9px;}
   .status-dot{display:inline-block; width:9px; height:9px; border-radius:50%; margin-left:6px;}
 
   /* מסך התחברות */
@@ -569,6 +575,9 @@ function memberGroups(m){ return (m.groupIds||[]).map(function(id){return groupL
 function groupSlots(g){ return (g && g.slots && g.slots.length) ? g.slots : [{day:String(g.day), time:fmtTime(g.time), court:''}]; }
 // תווית מגרש: אם המשתמש כתב כבר "מגרש X" משאירים; אחרת מוסיפים "מגרש " לפני הערך
 function courtLabel(court){ court=String(court==null?'':court).trim(); if(!court) return ''; return /^מגרש/.test(court) ? court : 'מגרש '+court; }
+// סקלטון־לואודר — מונע מסך ריק בזמן טעינה
+function skelCards(n){ var s=''; for(var i=0;i<(n||3);i++){ s+='<div class="skel skel-card"></div>'; } return s; }
+function skelRows(n){ var s=''; for(var i=0;i<(n||3);i++){ s+='<div class="att-row"><div class="avatar-wrap"><span class="skel skel-av"></span><span class="skel skel-line"></span></div><span class="skel skel-seg"></span></div>'; } return s; }
 var COURT_COUNT = 8; // מספר המגרשים במתחם
 function courtOpts(sel){ var o='<option value="">— ללא מגרש —</option>'; for(var i=1;i<=COURT_COUNT;i++){ o+='<option value="'+i+'" '+(String(sel)===String(i)?'selected':'')+'>מגרש '+i+'</option>'; } return o; }
 function slotsLabel(g){ return groupSlots(g).map(function(s){ var c=courtLabel(s.court); return 'יום '+DAYS[Number(s.day)]+' '+fmtTime(s.time)+(c?' · '+c:''); }).join(' · '); }
@@ -731,7 +740,7 @@ async function renderHome(){
     el.innerHTML='<div class="empty"><div class="big">🎾</div>אין מפגשים היום. נתראה בפעם הבאה!</div>';
     return;
   }
-  el.innerHTML='<div class="loader"><div class="spinner"></div></div>';
+  el.innerHTML=skelCards(3);
 
   var markedSet={}, canceledSet={}, canceledInfo={}, histRows=[];
   try{
@@ -1209,7 +1218,7 @@ async function renderTraineeHome(){
   $('homeTodayTitle').textContent='🎾 הקבוצות שלי';
   var el=$('homeToday');
   if(!m || !(m.groupIds||[]).length){ el.innerHTML='<div class="empty"><div class="big">🎾</div>עדיין לא שויכת לקבוצה. פנה למנהל.</div>'; return; }
-  el.innerHTML='<div class="loader"><div class="spinner"></div></div>';
+  el.innerHTML=skelCards(3);
   // דיווחי ההיעדרות שלי (כדי להציג "לא אגיע/אגיע")
   var myAbs={};
   try{ var abs=await api('getAbsences',{from:todayISO(), to:addDaysISO(todayISO(),60), memberId:m.id});
@@ -1328,12 +1337,14 @@ async function reloadMarkPrefill(){
   var court = slotCourtForDay(g, wd);
   $('markGroupMeta').textContent = '👤 '+coachName(g.coachId)+' · יום '+DAYS[wd]+' · '+slotTimeForDay(g, wd)+(court?' · '+courtLabel(court):'');
   var members = membersOfGroup(g.id);
-  STATE.markDraft = {}; STATE.trialNames = {};
+  STATE.markDraft = {};
   members.forEach(function(m){ STATE.markDraft[m.id]='present'; });
+  $('markList').innerHTML = skelRows(Math.max(members.length,3)); // סקלטון בזמן הטעינה — מונע הצגת הקבוצה הקודמת
   try{
     var hist = await api('getHistory',{from:date,to:date,groupId:g.id});
+    if(!STATE.currentGroup || STATE.currentGroup.id!==g.id) return; // עברו לקבוצה אחרת בינתיים — לא לרנדר תשובה ישנה
     hist.forEach(function(r){ if(STATE.markDraft.hasOwnProperty(r.memberId)) STATE.markDraft[r.memberId]=r.status; });
-  }catch(e){ /* ממשיכים עם ברירת מחדל */ }
+  }catch(e){ if(!STATE.currentGroup || STATE.currentGroup.id!==g.id) return; }
   renderMarkList();
 }
 
@@ -1535,7 +1546,7 @@ function renderSlotRows(){
     return '<div class="slot-row" style="display:flex;gap:6px;margin-bottom:8px;align-items:center;flex-wrap:wrap">'+
       '<select class="input slot-day" style="flex:1;min-width:88px">'+dayOpts(s.day)+'</select>'+
       '<select class="input slot-time" style="flex:1;min-width:88px">'+timeOptions(s.time)+'</select>'+
-      '<select class="input slot-court" style="flex:1;min-width:78px">'+courtOpts(s.court)+'</select>'+
+      '<select class="input slot-court" style="flex:1;min-width:78px"'+(STATE.role!=='manager'?' disabled title="רק המנהל קובע מגרש"':'')+'>'+courtOpts(s.court)+'</select>'+
       '<button type="button" class="icon-btn danger" title="הסר אימון" onclick="removeSlotRow('+i+')">✕</button></div>';
   }).join('');
 }
