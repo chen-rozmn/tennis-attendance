@@ -1754,9 +1754,16 @@ function renderCoachesManage(){
     }).join('');
 }
 async function tgSyncCoaches(){
+  var before={}; STATE.data.coaches.forEach(function(c){ before[c.id]=!!c.tgConnected; });
   try{ var r=await api('tgSync');
-    (r.coaches||[]).forEach(function(rc){ var c=STATE.data.coaches.find(function(x){return String(x.id)===String(rc.id);}); if(c) c.tgConnected=rc.tgConnected; });
-    renderCoachesManage(); toast('מחוברים כעת: '+(r.coaches||[]).filter(function(x){return x.tgConnected;}).length+' מאמנים','ok');
+    var newly=[];
+    (r.coaches||[]).forEach(function(rc){ var c=STATE.data.coaches.find(function(x){return String(x.id)===String(rc.id);});
+      if(c){ if(rc.tgConnected && !before[c.id]) newly.push(c); c.tgConnected=rc.tgConnected; } });
+    renderCoachesManage();
+    // ברכת חיבור למי שהתחבר עכשיו
+    for(var i=0;i<newly.length;i++){ try{ await api('notifyCoach',{coachId:newly[i].id, text:'חוברת בהצלחה 🎾 מעכשיו תקבל/י כאן תזכורות מהמועדון.'}); }catch(e){} }
+    var total=(r.coaches||[]).filter(function(x){return x.tgConnected;}).length;
+    toast('מחוברים כעת: '+total+' מאמנים'+(newly.length?' · נשלחה ברכה ל-'+newly.length:''),'ok');
   }catch(e){ toast('שגיאה: '+e.message,'bad'); }
 }
 function tgCopyLink(coachId){
