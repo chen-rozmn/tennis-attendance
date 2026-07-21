@@ -559,6 +559,8 @@ function memberGroups(m){ return (m.groupIds||[]).map(function(id){return groupL
 function groupSlots(g){ return (g && g.slots && g.slots.length) ? g.slots : [{day:String(g.day), time:fmtTime(g.time), court:''}]; }
 // תווית מגרש: אם המשתמש כתב כבר "מגרש X" משאירים; אחרת מוסיפים "מגרש " לפני הערך
 function courtLabel(court){ court=String(court==null?'':court).trim(); if(!court) return ''; return /^מגרש/.test(court) ? court : 'מגרש '+court; }
+var COURT_COUNT = 8; // מספר המגרשים במתחם
+function courtOpts(sel){ var o='<option value="">— ללא מגרש —</option>'; for(var i=1;i<=COURT_COUNT;i++){ o+='<option value="'+i+'" '+(String(sel)===String(i)?'selected':'')+'>מגרש '+i+'</option>'; } return o; }
 function slotsLabel(g){ return groupSlots(g).map(function(s){ var c=courtLabel(s.court); return 'יום '+DAYS[Number(s.day)]+' '+fmtTime(s.time)+(c?' · '+c:''); }).join(' · '); }
 function groupHasDay(g, wd){ return groupSlots(g).some(function(s){ return String(s.day)===String(wd); }); }
 function slotTimeForDay(g, wd){ var f=groupSlots(g).filter(function(s){return String(s.day)===String(wd);})[0]; return fmtTime(f ? f.time : groupSlots(g)[0].time); }
@@ -1320,10 +1322,7 @@ async function reloadMarkPrefill(){
   members.forEach(function(m){ STATE.markDraft[m.id]='present'; });
   try{
     var hist = await api('getHistory',{from:date,to:date,groupId:g.id});
-    hist.forEach(function(r){
-      if(STATE.markDraft.hasOwnProperty(r.memberId)) STATE.markDraft[r.memberId]=r.status;
-      else if(isTrialId(r.memberId)){ STATE.markDraft[r.memberId]=r.status; }  // שחזור מתאמני ניסיון שנשמרו
-    });
+    hist.forEach(function(r){ if(STATE.markDraft.hasOwnProperty(r.memberId)) STATE.markDraft[r.memberId]=r.status; });
   }catch(e){ /* ממשיכים עם ברירת מחדל */ }
   renderMarkList();
 }
@@ -1331,48 +1330,65 @@ async function reloadMarkPrefill(){
 function renderMarkList(){
   var g = STATE.currentGroup;
   var members = membersOfGroup(g.id);
-  var trialIds = Object.keys(STATE.markDraft).filter(isTrialId);
-  $('markCountPill').textContent = members.length + ' חניכים' + (trialIds.length ? ' · +'+trialIds.length+' ניסיון' : '');
+  $('markCountPill').textContent = members.length + ' חניכים';
   function segFor(id, st){
     function b(k,label){ return '<button class="'+(st===k?'on-'+k:'')+'" onclick="setStatus(\''+id+'\',\''+k+'\')">'+label+'</button>'; }
     return '<span class="seg">'+b('present','נוכח')+b('late','איחר')+b('absent','נעדר')+'</span>';
   }
+  if(members.length===0){
+    $('markList').innerHTML = '<div class="empty">אין חניכים בקבוצה זו.<br><button class="btn sm" style="margin-top:12px" onclick="openMemberModal(null,\''+g.id+'\')">➕ הוסף חניך לקבוצה זו</button>'+
+      '<div style="margin-top:8px"><button class="btn ghost sm" onclick="openTrialModal()">🎾 מתאמן ניסיון</button></div></div>';
+    $('saveAttBtn').disabled=true; return;
+  }
+  $('saveAttBtn').disabled=false;
   var rows = members.map(function(m){
     var st = STATE.markDraft[m.id]||'present';
-    return '<div class="att-row"><div class="avatar-wrap">'+avatar(m.name,'member',m.id,'sm')+'<span class="att-name">'+esc(m.name)+'</span></div>'+
+    var tag = m.trial ? ' <span class="pill" style="background:#2C6E8F">ניסיון</span>' : '';
+    var rm  = m.trial ? '<button class="icon-btn danger" title="הסר מהקבוצה (נשאר במאגר)" style="margin-inline-start:4px" onclick="removeTrialFromGroup(\''+m.id+'\')">✕</button>' : '';
+    return '<div class="att-row"><div class="avatar-wrap">'+avatar(m.name,'member',m.id,'sm')+'<span class="att-name">'+esc(m.name)+tag+'</span>'+rm+'</div>'+
       segFor(m.id, st)+'</div>';
   }).join('');
-  // שורות מתאמני ניסיון (הגיעו לאימון ניסיון)
-  rows += trialIds.map(function(id){
-    var st = STATE.markDraft[id]||'present'; var nm = id.slice(6);
-    return '<div class="att-row"><div class="avatar-wrap">'+avatar(nm,'member',id,'sm')+
-      '<span class="att-name">'+esc(nm)+' <span class="pill" style="background:var(--hard,#2C6E8F)">ניסיון</span></span>'+
-      '<button class="icon-btn danger" title="הסר" style="margin-inline-start:4px" onclick="removeTrial(\''+esc(id)+'\')">✕</button></div>'+
-      segFor(id, st)+'</div>';
-  }).join('');
-  rows += '<button class="btn ghost sm" style="margin-top:10px" onclick="openTrialModal()">➕ מתאמן ניסיון</button>';
+  rows += '<button class="btn ghost sm" style="margin-top:10px" onclick="openTrialModal()">🎾 הוסף מתאמן ניסיון</button>';
   $('markList').innerHTML = rows;
-  $('saveAttBtn').disabled = (members.length===0 && trialIds.length===0);
-  if(members.length===0 && trialIds.length===0){
-    $('markList').innerHTML = '<div class="empty">אין חניכים בקבוצה זו.<br><button class="btn sm" style="margin-top:12px" onclick="openMemberModal(null,\''+g.id+'\')">➕ הוסף חניך לקבוצה זו</button>'+
-      '<div style="margin-top:8px"><button class="btn ghost sm" onclick="openTrialModal()">➕ מתאמן ניסיון</button></div></div>';
-  }
 }
-// מתאמן ניסיון — הוספת שורה חד-פעמית לאימון (לא נשמר כחניך קבוע)
+// מתאמן ניסיון = חניך רגיל עם תגית "ניסיון". אפשר לבחור מהמאגר (מי שהיה בניסיון) או ליצור חדש.
 function openTrialModal(){
-  openModal('<h3>מתאמן ניסיון</h3><p class="sub">מתאמן שהגיע לאימון ניסיון — יירשם לנוכחות היום בלבד</p>'+
-    '<label class="fld"><span class="lbl">שם המתאמן</span><input class="input" id="trialName" placeholder="שם מלא" autocomplete="off"></label>'+
-    '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">ביטול</button>'+
-    '<button class="btn" onclick="addTrial()">הוספה</button></div>');
-  setTimeout(function(){ var t=$('trialName'); if(t) t.focus(); },50);
+  var g = STATE.currentGroup; if(!g) return;
+  var inGroup = {}; membersOfGroup(g.id).forEach(function(m){ inGroup[m.id]=1; });
+  var pool = STATE.data.members.filter(function(m){ return m.trial && !inGroup[m.id]; });
+  var poolHtml = pool.length ? pool.map(function(m){
+    return '<div class="list-item"><div class="avatar-wrap">'+avatar(m.name,'member',m.id,'sm')+'<div class="aw-txt"><div class="aw-name">'+esc(m.name)+'</div></div></div>'+
+      '<button class="btn ghost sm" onclick="addTrialFromPool(\''+m.id+'\')">הוסף</button></div>';
+  }).join('') : '<div class="sub" style="margin:2px 0 8px">אין עדיין מתאמני ניסיון קודמים</div>';
+  openModal('<h3>מתאמן ניסיון</h3><p class="sub">בחרו מהמאגר של מתאמני ניסיון קודמים, או הוסיפו חדש. נשמר כחניך עם תגית "ניסיון".</p>'+
+    '<div class="lbl" style="font-size:13px;font-weight:700;margin:6px 0 4px">מהמאגר</div>'+
+    '<div style="max-height:180px;overflow:auto;margin-bottom:12px">'+poolHtml+'</div>'+
+    '<label class="fld"><span class="lbl">מתאמן ניסיון חדש</span><input class="input" id="trialName" placeholder="שם מלא" autocomplete="off"></label>'+
+    '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">סגירה</button>'+
+    '<button class="btn" onclick="createTrialMember()">הוסף חדש</button></div>');
 }
-function addTrial(){
-  var nm=$('trialName').value.trim().replace(/[:]/g,' ');  // מונע שבירת המזהה
-  if(!nm){ toast('נא להזין שם','bad'); return; }
-  STATE.markDraft['trial:'+nm]='present';
-  closeModal(); renderMarkList();
+async function addTrialFromPool(memberId){
+  var g=STATE.currentGroup; var m=STATE.data.members.find(function(x){return x.id===memberId;}); if(!m||!g) return;
+  var gids=(m.groupIds||[]).slice(); if(gids.indexOf(g.id)<0) gids.push(g.id);
+  try{ var d=await api('editMember',{id:m.id, name:m.name, phone:m.phone||'', trial:true, groupIds:gids});
+    var i=STATE.data.members.findIndex(function(x){return x.id===m.id;}); if(i>=0) STATE.data.members[i]=d;
+    STATE.markDraft[m.id]='present'; closeModal(); renderMarkList(); toast('נוסף ✓','ok');
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
 }
-function removeTrial(id){ delete STATE.markDraft[id]; renderMarkList(); }
+async function createTrialMember(){
+  var g=STATE.currentGroup; var nm=$('trialName').value.trim(); if(!nm){ toast('נא להזין שם','bad'); return; }
+  try{ var d=await api('addMember',{name:nm, phone:'', trial:true, groupIds:[g.id]});
+    STATE.data.members.push(d); STATE.markDraft[d.id]='present'; closeModal(); renderMarkList(); toast('נוסף ✓','ok');
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
+}
+async function removeTrialFromGroup(memberId){
+  var g=STATE.currentGroup; var m=STATE.data.members.find(function(x){return x.id===memberId;}); if(!m||!g) return;
+  var gids=(m.groupIds||[]).filter(function(id){return id!==g.id;});
+  try{ var d=await api('editMember',{id:m.id, name:m.name, phone:m.phone||'', trial:true, groupIds:gids});
+    var i=STATE.data.members.findIndex(function(x){return x.id===m.id;}); if(i>=0) STATE.data.members[i]=d;
+    delete STATE.markDraft[m.id]; renderMarkList(); toast('הוסר מהקבוצה (נשאר במאגר)','ok');
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
+}
 function setStatus(memberId,status){ STATE.markDraft[memberId]=status; renderMarkList(); }
 function markAll(status){ Object.keys(STATE.markDraft).forEach(function(k){STATE.markDraft[k]=status;}); renderMarkList(); }
 
@@ -1509,7 +1525,7 @@ function renderSlotRows(){
     return '<div class="slot-row" style="display:flex;gap:6px;margin-bottom:8px;align-items:center;flex-wrap:wrap">'+
       '<select class="input slot-day" style="flex:1;min-width:88px">'+dayOpts(s.day)+'</select>'+
       '<select class="input slot-time" style="flex:1;min-width:88px">'+timeOptions(s.time)+'</select>'+
-      '<input class="input slot-court" style="flex:1;min-width:78px" placeholder="מגרש" value="'+esc(s.court||'')+'">'+
+      '<select class="input slot-court" style="flex:1;min-width:78px">'+courtOpts(s.court)+'</select>'+
       '<button type="button" class="icon-btn danger" title="הסר אימון" onclick="removeSlotRow('+i+')">✕</button></div>';
   }).join('');
 }
@@ -1558,8 +1574,9 @@ function renderMembersManage(){
   if(ms.length===0){ el.innerHTML='<div class="empty">אין חניכים להצגה.</div>'; return; }
   el.innerHTML = ms.map(function(m){
     var groups = (m.groupIds||[]).length ? memberGroups(m) : 'ללא קבוצה';
+    var tag = m.trial ? ' <span class="pill" style="background:#2C6E8F">ניסיון</span>' : '';
     return '<div class="list-item"><div class="avatar-wrap">'+avatar(m.name,'member',m.id,'sm')+
-      '<div class="aw-txt"><div class="aw-name">'+esc(m.name)+'</div>'+
+      '<div class="aw-txt"><div class="aw-name">'+esc(m.name)+tag+'</div>'+
       '<div class="aw-sub">'+esc(groups)+(m.phone?' · '+esc(m.phone):'')+'</div></div></div>'+
       '<div class="mini-actions"><button class="icon-btn" onclick="openMemberModal(\''+m.id+'\')">✏️</button>'+
       '<button class="icon-btn danger" onclick="confirmDeleteMember(\''+m.id+'\')">🗑️</button></div></div>';
@@ -1583,6 +1600,8 @@ function openMemberModal(id, presetGroupId){
     '<div class="lbl" style="font-size:13px;font-weight:600;margin-bottom:5px">קבוצות (אפשר לבחור כמה)</div>'+
     '<div class="chk-box" id="mGroupsBox">'+checks+'</div>'+
     '<label class="fld"><span class="lbl">טלפון (רשות)</span><input class="input" id="mPhone" value="'+esc(m?m.phone:'')+'" inputmode="tel" placeholder="050-0000000"></label>'+
+    '<label class="chk-row" style="border-bottom:none"><input type="checkbox" id="mTrial" '+((m&&m.trial)?'checked':'')+'>'+
+      '<span class="t"><b>מתאמן ניסיון</b><small>מסומן בתגית "ניסיון". נשאר במאגר גם אחרי שמסירים מקבוצה.</small></span></label>'+
     '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">ביטול</button>'+
     '<button class="btn" onclick="saveMember('+(m?'\''+m.id+'\'':'null')+')">שמירה</button></div>'
   );
@@ -1596,7 +1615,7 @@ async function saveMember(id){
   // אם עורכים חניך שכבר משויך לקבוצות שאינן גלויות למשתמש, שומרים אותן כדי לא לאבד מידע
   if(id){ var ex=STATE.data.members.find(function(x){return x.id===id;}); if(ex){ var vis=visibleGroupIdSet();
     (ex.groupIds||[]).forEach(function(gid){ if(!vis[gid] && groupIds.indexOf(gid)<0) groupIds.push(gid); }); } }
-  var p={name:name, groupIds:groupIds, phone:$('mPhone').value.trim()};
+  var p={name:name, groupIds:groupIds, phone:$('mPhone').value.trim(), trial:$('mTrial')?$('mTrial').checked:false};
   try{
     if(id){ var d=await api('editMember',Object.assign({id:id},p)); var i=STATE.data.members.findIndex(function(x){return x.id===id;}); STATE.data.members[i]=d; }
     else{ var mm=await api('addMember',p); STATE.data.members.push(mm); }

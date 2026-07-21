@@ -20,7 +20,7 @@
 var SHEETS = {
   Coaches:     ['id', 'name'],
   Groups:      ['id', 'name', 'day', 'time', 'coachId', 'slots'],
-  Members:     ['id', 'name', 'groupId', 'phone'],
+  Members:     ['id', 'name', 'groupId', 'phone', 'trial'],
   Attendance:  ['date', 'groupId', 'memberId', 'status', 'markedBy', 'timestamp'],
   Memberships: ['memberId', 'groupId'],
   Sessions:    ['date', 'groupId', 'status', 'note', 'markedBy', 'timestamp', 'makeup'],
@@ -256,7 +256,7 @@ function getAll_() {
       return { id: String(g.id), name: g.name, day: slots[0].day, time: slots[0].time, coachId: String(g.coachId), slots: slots };
     }),
     members: readAll_('Members').map(function (m) {
-      return { id: String(m.id), name: m.name, phone: m.phone ? String(m.phone) : '', groupIds: byMember[String(m.id)] || [] };
+      return { id: String(m.id), name: m.name, phone: m.phone ? String(m.phone) : '', trial: truthy_(m.trial), groupIds: byMember[String(m.id)] || [] };
     })
   };
 }
@@ -304,20 +304,24 @@ function deleteGroup_(p) {
 
 // ====== חניכים ======
 
+function truthy_(v) { return v === true || v === 1 || v === 'TRUE' || v === 'true' || v === '1'; }
+
 function addMember_(p) {
   if (!p.name) throw new Error('חסר שם חניך');
   var id = newId_('m');
-  sheet_('Members').appendRow([id, p.name, '', p.phone || '']);
+  var trial = truthy_(p.trial);
+  sheet_('Members').appendRow([id, p.name, '', p.phone || '', trial ? 'TRUE' : '']);
   setMemberships_(id, p.groupIds || []);
-  return { id: id, name: p.name, phone: p.phone || '', groupIds: (p.groupIds || []).map(String) };
+  return { id: id, name: p.name, phone: p.phone || '', trial: trial, groupIds: (p.groupIds || []).map(String) };
 }
 
 function editMember_(p) {
   var row = findRowById_('Members', p.id);
   if (row < 0) throw new Error('חניך לא נמצא');
-  sheet_('Members').getRange(row, 1, 1, 4).setValues([[p.id, p.name, '', p.phone || '']]);
+  var trial = truthy_(p.trial);
+  sheet_('Members').getRange(row, 1, 1, 5).setValues([[p.id, p.name, '', p.phone || '', trial ? 'TRUE' : '']]);
   setMemberships_(p.id, p.groupIds || []);
-  return { id: String(p.id), name: p.name, phone: p.phone || '', groupIds: (p.groupIds || []).map(String) };
+  return { id: String(p.id), name: p.name, phone: p.phone || '', trial: trial, groupIds: (p.groupIds || []).map(String) };
 }
 
 function deleteMember_(p) {
