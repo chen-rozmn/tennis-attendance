@@ -23,7 +23,7 @@ var SHEETS = {
   Members:     ['id', 'name', 'groupId', 'phone', 'trial', 'left'],
   Attendance:  ['date', 'groupId', 'memberId', 'status', 'markedBy', 'timestamp'],
   Memberships: ['memberId', 'groupId'],
-  Sessions:    ['date', 'groupId', 'status', 'note', 'markedBy', 'timestamp', 'makeup'],
+  Sessions:    ['date', 'groupId', 'status', 'note', 'markedBy', 'timestamp', 'makeup', 'subCoach'],
   Absences:    ['date', 'groupId', 'memberId', 'note', 'by', 'timestamp'],
   Users:       ['id', 'name', 'role', 'password', 'refId']
 };
@@ -77,6 +77,7 @@ function route(action, p) {
       case 'cancelSession': return jsonOut({ ok: true, data: cancelSession_(p) });
       case 'restoreSession':return jsonOut({ ok: true, data: restoreSession_(p) });
       case 'getSessions':   return jsonOut({ ok: true, data: getSessions_(p) });
+      case 'setSubCoach':   return jsonOut({ ok: true, data: setSubCoach_(p) });
 
       case 'reportAbsence':   return jsonOut({ ok: true, data: reportAbsence_(p) });
       case 'unreportAbsence': return jsonOut({ ok: true, data: unreportAbsence_(p) });
@@ -337,7 +338,12 @@ function sendMissingReminders_() {
   var todayStr = fmtDateGs_(now);
   var nowMin = now.getHours() * 60 + now.getMinutes();
   var attToday = {}; readAll_('Attendance').forEach(function (r) { if (fmtDateGs_(r.date) === todayStr) attToday[String(r.groupId)] = true; });
-  var cancToday = {}; readAll_('Sessions').forEach(function (s) { if (fmtDateGs_(s.date) === todayStr && s.status === 'canceled') cancToday[String(s.groupId)] = true; });
+  var cancToday = {}, subToday = {};
+  readAll_('Sessions').forEach(function (s) {
+    if (fmtDateGs_(s.date) !== todayStr) return;
+    if (String(s.status) === 'canceled') cancToday[String(s.groupId)] = true;
+    if (s.subCoach && String(s.subCoach).trim()) subToday[String(s.groupId)] = String(s.subCoach);
+  });
   var coaches = {}; readAll_('Coaches').forEach(function (c) { coaches[String(c.id)] = c; });
   var sent = 0;
   readAll_('Groups').forEach(function (g) {
@@ -347,7 +353,7 @@ function sendMissingReminders_() {
       if (nowMin < timeToMinGs_(s.time) + 60) return;    // עדיין לא הסתיים
       if (attToday[String(g.id)]) return;                // כבר מולא
       if (cancToday[String(g.id)]) return;               // בוטל
-      var c = coaches[String(g.coachId)];
+      var c = coaches[String(subToday[String(g.id)] || g.coachId)];  // מחליף גובר על מאמן הקבוצה
       if (c && c.tg && String(c.tg).trim()) {
         try { tgSend_(c.tg, 'תזכורת 🎾 ' + c.name + ', טרם מולאה נוכחות לאימון "' + g.name + '" בשעה ' + fmtTimeGs_(s.time) + ' היום. נא למלא באפליקציה.'); sent++; } catch (e) {}
       }
@@ -463,31 +469,54 @@ function getHistory_(p) {
 
 // ====== סטטוס מפגש (ביטול/החזרה) ======
 
-/** ביטול מפגש: { date, groupId, note, by } */
+// upsert של שורת מפגש ל-(date, groupId) — משמר שדות קיימים ומעדכן רק את מה שנשלח
+function upsertSession_(date, groupId, changes) {
+  var sh = sheet_('Sessions'), vals = sh.getDataRange().getValues();
+  var ex = { status: '', note: '', markedBy: '', makeup: '', subCoach: '' };
+  for (var r = vals.length - 1; r >= 1; r--) {
+    if (fmtDateGs_(vals[r][0]) === String(date) && String(vals[r][1]) === String(groupId)) {
+      ex = { status: String(vals[r][2] || ''), note: String(vals[r][3] || ''), markedBy: String(vals[r][4] || ''), makeup: vals[r][6] || '', subCoach: String(vals[r][7] || '') };
+      sh.deleteRow(r + 1);
+    }
+  }
+  var m = { status: ex.status, note: ex.note, markedBy: ex.markedBy, makeup: ex.makeup, subCoach: ex.subCoach };
+  for (var k in changes) { if (changes.hasOwnProperty(k)) m[k] = changes[k]; }
+  if (!m.status && !(m.subCoach && String(m.subCoach).trim())) {  // אין סטטוס ואין מחליף — אין צורך בשורה
+    return { date: String(date), groupId: String(groupId), cleared: true };
+  }
+  sh.appendRow([date, groupId, m.status, m.note, m.markedBy || '', new Date().toISOString(), m.makeup || '', m.subCoach || '']);
+  return { date: String(date), groupId: String(groupId), status: m.status, note: m.note, makeup: m.makeup || '', subCoach: m.subCoach || '' };
+}
+
+/** ביטול מפגש: { date, groupId, note, by, makeup } */
 function cancelSession_(p) {
   if (!p.date || !p.groupId) throw new Error('חסר תאריך או קבוצה');
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    var sh = sheet_('Sessions'), vals = sh.getDataRange().getValues();
-    for (var r = vals.length - 1; r >= 1; r--) {
-      if (fmtDateGs_(vals[r][0]) === String(p.date) && String(vals[r][1]) === String(p.groupId)) sh.deleteRow(r + 1);
-    }
-    sh.appendRow([p.date, p.groupId, 'canceled', p.note || '', p.by || '', new Date().toISOString(), p.makeup || '']);
-    return { date: p.date, groupId: String(p.groupId), status: 'canceled', note: p.note || '', makeup: p.makeup || '' };
+    return upsertSession_(p.date, p.groupId, { status: 'canceled', note: p.note || '', markedBy: p.by || '', makeup: p.makeup || '' });
   } finally {
     lock.releaseLock();
   }
 }
 
-/** ביטול הביטול: { date, groupId } */
+/** ביטול הביטול: { date, groupId } — משמר מחליף אם קיים */
 function restoreSession_(p) {
   if (!p.date || !p.groupId) throw new Error('חסר תאריך או קבוצה');
-  var sh = sheet_('Sessions'), vals = sh.getDataRange().getValues();
-  for (var r = vals.length - 1; r >= 1; r--) {
-    if (fmtDateGs_(vals[r][0]) === String(p.date) && String(vals[r][1]) === String(p.groupId)) sh.deleteRow(r + 1);
-  }
+  upsertSession_(p.date, p.groupId, { status: '', note: '', makeup: '' });
   return { date: p.date, groupId: String(p.groupId), restored: true };
+}
+
+/** קביעת מאמן מחליף לאימון בתאריך: { date, groupId, subCoach } (subCoach ריק = ביטול המחליף) */
+function setSubCoach_(p) {
+  if (!p.date || !p.groupId) throw new Error('חסר תאריך או קבוצה');
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    return upsertSession_(p.date, p.groupId, { subCoach: p.subCoach || '' });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /** שליפת סטטוסי מפגשים: { from, to, groupId } */
@@ -497,7 +526,7 @@ function getSessions_(p) {
     return {
       date: fmtDateGs_(a.date), groupId: String(a.groupId), status: String(a.status),
       note: String(a.note || ''), markedBy: String(a.markedBy || ''), timestamp: String(a.timestamp || ''),
-      makeup: a.makeup ? fmtDateGs_(a.makeup) : ''
+      makeup: a.makeup ? fmtDateGs_(a.makeup) : '', subCoach: String(a.subCoach || '')
     };
   }).filter(function (a) {
     if (p.from && a.date < String(p.from)) return false;

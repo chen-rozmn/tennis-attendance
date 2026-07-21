@@ -759,18 +759,21 @@ async function renderHome(){
   $('homeCountNum').textContent = todays.length;  // מציגים מיד את מספר המפגשים (לא ממתינים לטעינת הסטטוסים)
   el.innerHTML=skelCards(3);
 
-  var markedSet={}, canceledSet={}, canceledInfo={}, histRows=[];
+  var markedSet={}, canceledSet={}, canceledInfo={}, histRows=[], subMap={};
   try{
     var res = await Promise.all([
       api('getHistory',{from:todayISO(),to:todayISO()}),
       api('getSessions',{from:todayISO(),to:todayISO()})
     ]);
     res[0].forEach(function(r){ markedSet[r.groupId]=true; });
-    res[1].forEach(function(s){ if(s.status==='canceled'){ canceledSet[s.groupId]=true; canceledInfo[s.groupId]={note:s.note||'', makeup:s.makeup||''}; } });
+    res[1].forEach(function(s){
+      if(s.status==='canceled'){ canceledSet[s.groupId]=true; canceledInfo[s.groupId]={note:s.note||'', makeup:s.makeup||''}; }
+      if(s.subCoach){ subMap[s.groupId]=s.subCoach; }  // מאמן מחליף להיום
+    });
     histRows = res[0]||[];
   }catch(e){ /* אם נכשל — נחשב לפי שעה בלבד */ }
 
-  HOME_DATA = {todays:todays, markedSet:markedSet, canceledSet:canceledSet, canceledInfo:canceledInfo, hist:histRows};
+  HOME_DATA = {todays:todays, markedSet:markedSet, canceledSet:canceledSet, canceledInfo:canceledInfo, hist:histRows, subMap:subMap};
   renderHomeList();
 }
 function statusOf(e){ return sessionStatusT(e.g.id, e.time, HOME_DATA.markedSet, HOME_DATA.canceledSet); }
@@ -814,7 +817,9 @@ function renderHomeList(){
   var entries = d.todays.filter(function(e){ return !STATE.homeFilter || statusOf(e)===STATE.homeFilter; });
   var el=$('homeToday');
   if(entries.length===0){ el.innerHTML='<div class="empty">אין מפגשים בסטטוס זה.</div>'; return; }
-  var byCoach={}; entries.forEach(function(e){ (byCoach[e.g.coachId]=byCoach[e.g.coachId]||[]).push(e); });
+  // קיבוץ לפי המאמן בפועל (מחליף גובר על מאמן הקבוצה להיום)
+  function effCoach(e){ return (d.subMap && d.subMap[e.g.id]) || e.g.coachId; }
+  var byCoach={}; entries.forEach(function(e){ var c=effCoach(e); (byCoach[c]=byCoach[c]||[]).push(e); });
   var coachIds=Object.keys(byCoach).sort(function(a,b){ return coachName(a)>coachName(b)?1:-1; });
   el.innerHTML = coachIds.map(function(cid){
     var list=byCoach[cid].slice().sort(function(a,b){ return timeToMin(a.time)-timeToMin(b.time); });
@@ -839,7 +844,8 @@ function renderHomeList(){
           '<button class="icon-btn danger" title="בטל מפגש" onclick="event.stopPropagation();openCancelModal(\''+g.id+'\')">✕</button>';
       }
       var courtTxt = e.court ? ' · '+esc(courtLabel(e.court)) : '';
-      return '<div class="sess-row"><div style="min-width:0"><div class="aw-name">'+live+' '+esc(g.name)+' · '+esc(e.time)+courtTxt+'</div>'+
+      var subTag = (d.subMap && d.subMap[g.id]) ? ' <span class="ttag">(מחליף)</span>' : '';
+      return '<div class="sess-row"><div style="min-width:0"><div class="aw-name">'+live+' '+esc(g.name)+' · '+esc(e.time)+courtTxt+subTag+'</div>'+
         sessMini(st)+extra+'</div><div class="sess-actions">'+actions+'</div></div>';
     }).join('');
     // פתיחה אוטומטית למאמן שדורש טיפול (אימון שהסתיים ללא נוכחות או מתרחש כרגע)
@@ -1360,9 +1366,14 @@ async function reloadMarkPrefill(){
   members.forEach(function(m){ STATE.markDraft[m.id]='present'; });
   $('markList').innerHTML = skelRows(Math.max(members.length,3)); // סקלטון בזמן הטעינה — מונע הצגת הקבוצה הקודמת
   try{
-    var hist = await api('getHistory',{from:date,to:date,groupId:g.id});
+    var res = await Promise.all([
+      api('getHistory',{from:date,to:date,groupId:g.id}),
+      api('getSessions',{from:date,to:date,groupId:g.id})
+    ]);
     if(!STATE.currentGroup || STATE.currentGroup.id!==g.id) return; // עברו לקבוצה אחרת בינתיים — לא לרנדר תשובה ישנה
-    hist.forEach(function(r){ if(STATE.markDraft.hasOwnProperty(r.memberId)) STATE.markDraft[r.memberId]=r.status; });
+    res[0].forEach(function(r){ if(STATE.markDraft.hasOwnProperty(r.memberId)) STATE.markDraft[r.memberId]=r.status; });
+    var sub=(res[1]||[]).filter(function(s){return s.subCoach;})[0];  // מאמן מחליף לתאריך זה
+    if(sub){ $('markGroupMeta').textContent = '👤 '+coachName(sub.subCoach)+' (מחליף) · יום '+DAYS[wd]+' · '+slotTimeForDay(g, wd)+(court?' · '+courtLabel(court):''); }
   }catch(e){ if(!STATE.currentGroup || STATE.currentGroup.id!==g.id) return; }
   renderMarkList();
 }
@@ -1542,10 +1553,15 @@ function openGroupModal(id){
   var defCoach = g ? g.coachId : (STATE.role==='coach'?STATE.coachId:'');
   var coachOpts = STATE.data.coaches.map(function(c){return '<option value="'+c.id+'" '+(defCoach===c.id?'selected':'')+'>'+esc(c.name)+'</option>';}).join('');
   SLOT_EDIT = g ? groupSlots(g).map(function(s){return {day:String(s.day), time:fmtTime(s.time), court:(s.court||'')};}) : [{day:String(new Date().getDay()), time:'16:00', court:''}];
+  var editing = !!g;
+  var permBox = editing ? '<label class="chk-row" style="border-bottom:none"><input type="checkbox" id="gPermanent"><span class="t"><b>שינוי מאמן קבוע</b><small>עד להודעה חדשה. יש לסמן כדי להחליף את המאמן האחראי.</small></span></label>' : '';
+  var subBtn = (editing && STATE.role==='manager') ? '<button type="button" class="btn ghost sm" style="margin-bottom:12px" onclick="openSubCoachModal(\''+g.id+'\')">🔁 מאמן מחליף (חד־פעמי / עתידי)</button>' : '';
   openModal(
     '<h3>'+(g?'עריכת קבוצה':'קבוצה חדשה')+'</h3>'+
     '<label class="fld"><span class="lbl">שם הקבוצה</span><input class="input" id="gName" value="'+esc(g?g.name:'')+'" placeholder="למשל: מתחילים א׳"></label>'+
     '<label class="fld"><span class="lbl">מאמן אחראי</span><select class="input" id="gCoach">'+(coachOpts||'<option value="">— אין מאמנים —</option>')+'</select></label>'+
+    permBox+
+    subBtn+
     '<div class="lbl" style="font-size:13px;font-weight:600;margin-bottom:5px">אימונים שבועיים</div>'+
     '<div id="slotList"></div>'+
     '<button type="button" class="btn ghost sm" style="margin-bottom:12px" onclick="addSlotRow()">➕ הוסף אימון</button>'+
@@ -1553,6 +1569,38 @@ function openGroupModal(id){
     '<button class="btn" onclick="saveGroup('+(g?'\''+g.id+'\'':'null')+')">שמירה</button></div>'
   );
   renderSlotRows();
+}
+// מאמן מחליף — לאימון הקרוב או לאימונים עתידיים נבחרים
+function openSubCoachModal(groupId){
+  var g=STATE.data.groups.find(function(x){return x.id===groupId;}); if(!g) return;
+  var others=STATE.data.coaches.filter(function(c){return String(c.id)!==String(g.coachId);});
+  if(!others.length){ openModal('<h3>מאמן מחליף</h3><div class="banner err">אין מאמן אחר לבחירה. הוסיפו מאמן קודם.</div><div class="modal-actions"><button class="btn secondary" onclick="closeModal()">סגירה</button></div>'); return; }
+  var coachOpts=others.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+'</option>';}).join('');
+  var ups=upcomingSessions(g, 10);
+  var nextLbl = ups.length ? (niceDate(ups[0].date).day+' · '+niceDate(ups[0].date).num) : '';
+  var futureList = ups.map(function(u){ var nd=niceDate(u.date); return '<label class="chk-row"><input type="checkbox" class="subdate" value="'+u.date+'"><span class="t"><b>'+esc(nd.day+' · '+nd.num)+'</b><small>'+esc(u.time?fmtTime(u.time):'')+(u.court?' · '+esc(courtLabel(u.court)):'')+'</small></span></label>'; }).join('');
+  openModal('<h3>מאמן מחליף</h3><p class="sub">'+esc(g.name)+' · מאמן קבוע: '+esc(coachName(g.coachId))+'</p>'+
+    '<label class="fld"><span class="lbl">בחרו מאמן מחליף</span><select class="input" id="subCoachSel">'+coachOpts+'</select></label>'+
+    (ups.length? '<button class="btn" style="margin-bottom:14px" onclick="applySubNext(\''+groupId+'\')">✔ החל לאימון הקרוב'+(nextLbl?' · '+esc(nextLbl):'')+'</button>' : '')+
+    '<div class="lbl" style="font-size:13px;font-weight:700;margin:2px 0 6px">אימונים עתידיים (אפשר לבחור כמה)</div>'+
+    '<div class="chk-box">'+(futureList||'<div class="sub">אין אימונים קרובים</div>')+'</div>'+
+    '<button class="btn ghost sm" style="margin-top:8px" onclick="applySubSelected(\''+groupId+'\')">החל על הנבחרים</button>'+
+    '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">סגירה</button></div>');
+}
+async function applySubNext(groupId){
+  var g=STATE.data.groups.find(function(x){return x.id===groupId;}); var ups=upcomingSessions(g,1);
+  if(!ups.length){ toast('אין אימון קרוב','bad'); return; }
+  try{ await api('setSubCoach',{date:ups[0].date, groupId:groupId, subCoach:$('subCoachSel').value});
+    closeModal(); refreshAll(); toast('מאמן מחליף נקבע לאימון הקרוב ✓','ok');
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
+}
+async function applySubSelected(groupId){
+  var sub=$('subCoachSel').value;
+  var dates=Array.prototype.slice.call(document.querySelectorAll('.subdate:checked')).map(function(i){return i.value;});
+  if(!dates.length){ toast('בחרו לפחות אימון אחד','bad'); return; }
+  try{ for(var i=0;i<dates.length;i++){ await api('setSubCoach',{date:dates[i], groupId:groupId, subCoach:sub}); }
+    closeModal(); refreshAll(); toast('מאמן מחליף נקבע ל-'+dates.length+' אימונים ✓','ok');
+  }catch(e){ toast('שגיאה: '+e.message,'bad'); }
 }
 function readSlotRows(){
   return Array.prototype.slice.call(document.querySelectorAll('#slotList .slot-row')).map(function(r){
@@ -1578,7 +1626,13 @@ function removeSlotRow(i){
 async function saveGroup(id){
   var name=$('gName').value.trim(); if(!name){ toast('נא להזין שם קבוצה','bad'); return; }
   var slots=readSlotRows(); if(!slots.length){ toast('נא להוסיף לפחות אימון אחד','bad'); return; }
-  var p={name:name, coachId:$('gCoach').value, slots:slots, day:slots[0].day, time:slots[0].time};
+  var newCoach=$('gCoach').value;
+  if(id){ var orig=STATE.data.groups.find(function(x){return x.id===id;});
+    if(orig && String(orig.coachId)!==String(newCoach) && !($('gPermanent')&&$('gPermanent').checked)){
+      toast('להחלפת מאמן קבועה — סמנו "שינוי מאמן קבוע"','bad'); return;
+    }
+  }
+  var p={name:name, coachId:newCoach, slots:slots, day:slots[0].day, time:slots[0].time};
   try{
     if(id){ var d=await api('editGroup',Object.assign({id:id},p)); var i=STATE.data.groups.findIndex(function(x){return x.id===id;}); STATE.data.groups[i]=d; }
     else{ var g=await api('addGroup',p); STATE.data.groups.push(g); }
