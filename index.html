@@ -168,6 +168,7 @@
   .seg-tabs{display:flex; gap:6px; background:#eef1ef; padding:4px; border-radius:12px; margin-bottom:14px;}
   .seg-tabs button{flex:1; padding:9px; border-radius:9px; font-weight:700; font-size:13px; color:var(--muted);}
   .seg-tabs button.active{background:#fff; color:var(--green); box-shadow:var(--shadow);}
+  .ttag{font-size:.82em; font-weight:700; color:#2C6E8F;} .ttag.muted{color:var(--muted);}
   .status-dot{display:inline-block; width:9px; height:9px; border-radius:50%; margin-left:6px;}
 
   /* מסך התחברות */
@@ -548,8 +549,17 @@ function $(id){ return document.getElementById(id); }
 function toast(msg,kind){ var t=$('toast'); t.textContent=msg; t.className=(kind||'')+' show'; setTimeout(function(){t.className=(kind||'');},2600); }
 
 function coachName(id){ var c=STATE.data.coaches.find(function(x){return x.id===id;}); return c?c.name:'—'; }
-function nameOfMember(id){ id=String(id==null?'':id); if(id.indexOf('trial:')===0) return id.slice(6)+' (ניסיון)'; var m=STATE.data.members.find(function(x){return x.id===id;}); return m?m.name:'(חניך שנמחק)'; }
+function nameOfMember(id){ id=String(id==null?'':id); if(id.indexOf('trial:')===0) return id.slice(6); var m=STATE.data.members.find(function(x){return String(x.id)===id;}); return m?m.name:'מתאמן שעזב'; }
 function isTrialId(id){ return String(id==null?'':id).indexOf('trial:')===0; }
+// תגית ליד השם: (ניסיון) / (עזב) — להצגה ברשימות ובהיסטוריה
+function memberTag(id){
+  var m=STATE.data.members.find(function(x){return String(x.id)===String(id);});
+  if(!m) return '';
+  if(m.trial && m.left) return ' <span class="ttag">(ניסיון · עזב)</span>';
+  if(m.left)  return ' <span class="ttag muted">(עזב)</span>';
+  if(m.trial) return ' <span class="ttag">(ניסיון)</span>';
+  return '';
+}
 function nameOfGroup(id){ var g=STATE.data.groups.find(function(x){return x.id===id;}); return g?g.name:'(קבוצה שנמחקה)'; }
 // תווית קבוצה כוללת שם מאמן — כדי להבחין בין קבוצות בעלות שם זהה
 function groupLabel(id){ var g=STATE.data.groups.find(function(x){return x.id===id;}); return g?g.name+' · '+coachName(g.coachId):'(קבוצה שנמחקה)'; }
@@ -1069,7 +1079,7 @@ function updateChips(){
   var t = (STATE.role==='trainee');
   ['tab-attendance','tab-history','tab-manage'].forEach(function(id){ var b=$(id); if(b) b.style.display = t ? 'none' : 'flex'; });
   // לשונית "משתמשים" בניהול — למנהל בלבד
-  var mu=$('mt-users'); if(mu) mu.style.display = (STATE.role==='manager') ? 'flex' : 'none';
+  var mu=$('mt-users'); if(mu) mu.style.display = (STATE.role==='manager') ? '' : 'none';
 }
 
 function openCoachPicker(force){
@@ -1343,7 +1353,7 @@ function renderMarkList(){
   $('saveAttBtn').disabled=false;
   var rows = members.map(function(m){
     var st = STATE.markDraft[m.id]||'present';
-    var tag = m.trial ? ' <span class="pill" style="background:#2C6E8F">ניסיון</span>' : '';
+    var tag = memberTag(m.id);
     var rm  = m.trial ? '<button class="icon-btn danger" title="הסר מהקבוצה (נשאר במאגר)" style="margin-inline-start:4px" onclick="removeTrialFromGroup(\''+m.id+'\')">✕</button>' : '';
     return '<div class="att-row"><div class="avatar-wrap">'+avatar(m.name,'member',m.id,'sm')+'<span class="att-name">'+esc(m.name)+tag+'</span>'+rm+'</div>'+
       segFor(m.id, st)+'</div>';
@@ -1568,13 +1578,14 @@ function populateMemberFilter(){
 function renderMembersManage(){
   var el=$('membersManageList'); var filter=$('memFilter').value;
   var ms=STATE.data.members.filter(function(m){
+    if(m.left) return false;  // מי שעזב לא מוצג ברשימה הפעילה (נשמר ברשומות)
     if(filter) return (m.groupIds||[]).indexOf(filter)>=0;
     return STATE.role==='manager' ? (STATE.managerFilter? memberInVisible(m):true) : memberInVisible(m);
   });
   if(ms.length===0){ el.innerHTML='<div class="empty">אין חניכים להצגה.</div>'; return; }
   el.innerHTML = ms.map(function(m){
     var groups = (m.groupIds||[]).length ? memberGroups(m) : 'ללא קבוצה';
-    var tag = m.trial ? ' <span class="pill" style="background:#2C6E8F">ניסיון</span>' : '';
+    var tag = memberTag(m.id);
     return '<div class="list-item"><div class="avatar-wrap">'+avatar(m.name,'member',m.id,'sm')+
       '<div class="aw-txt"><div class="aw-name">'+esc(m.name)+tag+'</div>'+
       '<div class="aw-sub">'+esc(groups)+(m.phone?' · '+esc(m.phone):'')+'</div></div></div>'+
@@ -1629,14 +1640,15 @@ async function saveMember(id){
 }
 function confirmDeleteMember(id){
   var m=STATE.data.members.find(function(x){return x.id===id;});
-  openModal('<h3>מחיקת חניך</h3><p>למחוק את "'+esc(m.name)+'"? הוא יוסר מכל הקבוצות שלו.</p>'+
+  openModal('<h3>הסרת חניך</h3><p>להסיר את "'+esc(m.name)+'"? הוא יוסר מכל הקבוצות, אך יישאר ברשומות העבר עם תגית "עזב" (כדי לא לאבד היסטוריית נוכחות). אפשר להחזירו בהמשך.</p>'+
     '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">ביטול</button>'+
-    '<button class="btn" style="background:var(--absent)" onclick="doDeleteMember(\''+id+'\')">מחיקה</button></div>');
+    '<button class="btn" style="background:var(--absent)" onclick="doDeleteMember(\''+id+'\')">הסרה</button></div>');
 }
 async function doDeleteMember(id){
   try{ await api('deleteMember',{id:id});
-    STATE.data.members=STATE.data.members.filter(function(x){return x.id!==id;});
-    closeModal(); refreshAll(); toast('נמחק','ok');
+    var m=STATE.data.members.find(function(x){return x.id===id;});
+    if(m){ m.left=true; m.groupIds=[]; }  // מחיקה רכה — נשאר לרשומות
+    closeModal(); refreshAll(); toast('הוסר (נשמר ברשומות)','ok');
   }catch(e){ toast('שגיאה: '+e.message,'bad'); }
 }
 
@@ -1735,7 +1747,7 @@ function renderHistByDate(rows){
     var nd=niceDate(d);
     var rowsHtml=list.map(function(r){
       return '<div class="hrow"><div class="avatar-wrap">'+avatar(nameOfMember(r.memberId),'member',r.memberId,'sm')+
-        '<div class="aw-txt"><div class="aw-name">'+esc(nameOfMember(r.memberId))+'</div>'+
+        '<div class="aw-txt"><div class="aw-name">'+esc(nameOfMember(r.memberId))+memberTag(r.memberId)+'</div>'+
         '<div class="aw-sub">'+esc(groupLabel(r.groupId))+'</div></div></div>'+statusChip(r.status)+'</div>';
     }).join('');
     return '<div class="card"><div class="date-head"><div><div class="dh-title">'+esc(nd.day)+'</div>'+
@@ -1756,7 +1768,7 @@ function renderHistByMember(rows){
         '<div class="aw-sub">'+esc(nd.day)+' · '+esc(groupLabel(r.groupId))+'</div></div></div>'+statusChip(r.status)+'</div>';
     }).join('');
     return '<div class="card"><div class="date-head"><div class="avatar-wrap">'+avatar(nameOfMember(mid),'member',mid)+
-      '<div class="aw-txt"><div class="dh-title">'+esc(nameOfMember(mid))+'</div></div></div>'+
+      '<div class="aw-txt"><div class="dh-title">'+esc(nameOfMember(mid))+memberTag(mid)+'</div></div></div>'+
       '<span class="dh-sum">'+came+'/'+list.length+' הגיע</span></div>'+rowsHtml+'</div>';
   }).join('');
   $('histResult').innerHTML=html;
