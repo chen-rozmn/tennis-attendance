@@ -289,7 +289,7 @@
   .miss-alert{width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:right; margin-bottom:14px; padding:12px 14px; border:none; border-radius:14px; background:#fbe3e1; color:#C2413B; font-family:inherit; font-weight:800; font-size:14px; cursor:pointer; box-shadow:inset 0 0 0 1px #f0c4c0;}
   .miss-alert:active{transform:scale(.99);}
   .miss-alert .ma-go{font-weight:800; white-space:nowrap; opacity:.85;}
-  .live-pulse{width:8px; height:8px; border-radius:50%; background:var(--late); box-shadow:0 0 0 0 rgba(224,147,15,.6); animation:pulse 1.4s infinite;}
+  .live-pulse{display:inline-block; vertical-align:middle; width:8px; height:8px; border-radius:50%; background:var(--late); box-shadow:0 0 0 0 rgba(224,147,15,.6); animation:pulse 1.4s infinite;}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(224,147,15,.5);}70%{box-shadow:0 0 0 7px rgba(224,147,15,0);}100%{box-shadow:0 0 0 0 rgba(224,147,15,0);}}
   .sess-row{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 2px; border-bottom:1px solid var(--line);}
   .sess-row:last-child{border-bottom:none;}
@@ -600,6 +600,26 @@ function slotsLabel(g){ return groupSlots(g).map(function(s){ var c=courtLabel(s
 function groupHasDay(g, wd){ return groupSlots(g).some(function(s){ return String(s.day)===String(wd); }); }
 function slotTimeForDay(g, wd){ var f=groupSlots(g).filter(function(s){return String(s.day)===String(wd);})[0]; return fmtTime(f ? f.time : groupSlots(g)[0].time); }
 function slotCourtForDay(g, wd){ var f=groupSlots(g).filter(function(s){return String(s.day)===String(wd);})[0]; return f ? (f.court||'') : ''; }
+// מונע לחיצות כפולות/ספאם: משבית את הכפתור שנלחץ ומראה טקסט זמני עד שהפעולה מסתיימת
+async function busy(el, fn, label){
+  if(el && el.getAttribute && el.getAttribute('data-busy')) return;   // כבר בתהליך — מתעלמים
+  var old;
+  if(el && el.setAttribute){
+    old = el.innerHTML; el.setAttribute('data-busy','1');
+    if(el.tagName==='BUTTON') el.disabled = true;
+    el.style.opacity='.6'; el.style.pointerEvents='none';
+    if(label) el.innerHTML = label;
+  }
+  try{ return await fn(); }
+  finally{
+    if(el && el.setAttribute){
+      el.removeAttribute('data-busy');
+      if(el.tagName==='BUTTON') el.disabled = false;
+      el.style.opacity=''; el.style.pointerEvents='';
+      if(label && old!==undefined) el.innerHTML = old;
+    }
+  }
+}
 
 // ---------- אווטארים ותגיות ----------
 function initials(name){
@@ -839,7 +859,7 @@ function renderHomeList(){
           '<button class="icon-btn" title="בטל ביטול" onclick="event.stopPropagation();restoreSession(\''+g.id+'\')">↩︎</button>';
       } else {
         var tgBtn = (st==='missed' && STATE.role==='manager') ?
-          '<button class="btn ghost sm" title="שלח תזכורת בטלגרם" onclick="event.stopPropagation();sendCoachReminder(\''+cid+'\',\''+g.id+'\',\''+esc(e.time)+'\')">📲 תזכורת</button>' : '';
+          '<button class="btn ghost sm" title="שלח תזכורת בטלגרם" onclick="event.stopPropagation();busy(this,function(){return sendCoachReminder(\''+cid+'\',\''+g.id+'\',\''+esc(e.time)+'\')},\'שולח…\')">📲 תזכורת</button>' : '';
         actions=tgBtn+'<button class="btn ghost sm" onclick="event.stopPropagation();openMark(\''+g.id+'\')">סמן</button>'+
           '<button class="icon-btn danger" title="בטל מפגש" onclick="event.stopPropagation();openCancelModal(\''+g.id+'\')">✕</button>';
       }
@@ -1409,14 +1429,14 @@ function openTrialModal(){
   var pool = STATE.data.members.filter(function(m){ return m.trial && !inGroup[m.id]; });
   var poolHtml = pool.length ? pool.map(function(m){
     return '<div class="list-item"><div class="avatar-wrap">'+avatar(m.name,'member',m.id,'sm')+'<div class="aw-txt"><div class="aw-name">'+esc(m.name)+'</div></div></div>'+
-      '<button class="btn ghost sm" onclick="addTrialFromPool(\''+m.id+'\')">הוסף</button></div>';
+      '<button class="btn ghost sm" onclick="busy(this,function(){return addTrialFromPool(\''+m.id+'\')},\'מוסיף…\')">הוסף</button></div>';
   }).join('') : '<div class="sub" style="margin:2px 0 8px">אין עדיין מתאמני ניסיון קודמים</div>';
   openModal('<h3>מתאמן ניסיון</h3><p class="sub">בחרו מהמאגר של מתאמני ניסיון קודמים, או הוסיפו חדש. נשמר כחניך עם תגית "ניסיון".</p>'+
     '<div class="lbl" style="font-size:13px;font-weight:700;margin:6px 0 4px">מהמאגר</div>'+
     '<div style="max-height:180px;overflow:auto;margin-bottom:12px">'+poolHtml+'</div>'+
     '<label class="fld"><span class="lbl">מתאמן ניסיון חדש</span><input class="input" id="trialName" placeholder="שם מלא" autocomplete="off"></label>'+
     '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">סגירה</button>'+
-    '<button class="btn" onclick="createTrialMember()">הוסף חדש</button></div>');
+    '<button class="btn" onclick="busy(this,function(){return createTrialMember()},\'מוסיף…\')">הוסף חדש</button></div>');
 }
 async function addTrialFromPool(memberId){
   var g=STATE.currentGroup; var m=STATE.data.members.find(function(x){return x.id===memberId;}); if(!m||!g) return;
@@ -1698,7 +1718,7 @@ function openMemberModal(id, presetGroupId){
     '<label class="chk-row" style="border-bottom:none"><input type="checkbox" id="mTrial" '+((m&&m.trial)?'checked':'')+'>'+
       '<span class="t"><b>מתאמן ניסיון</b><small>מסומן בתגית "ניסיון". נשאר במאגר גם אחרי שמסירים מקבוצה.</small></span></label>'+
     '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">ביטול</button>'+
-    '<button class="btn" onclick="saveMember('+(m?'\''+m.id+'\'':'null')+')">שמירה</button></div>'
+    '<button class="btn" onclick="busy(this,function(){return saveMember('+(m?'\''+m.id+'\'':'null')+')},\'שומר…\')">שמירה</button></div>'
   );
 }
 function collectMemberGroups(){
@@ -1743,11 +1763,11 @@ function renderCoachesManage(){
   if(cs.length===0){ el.innerHTML='<div class="empty">אין מאמנים עדיין.</div>'; return; }
   el.innerHTML =
     '<div class="sub" style="margin:0 2px 8px">חיבור טלגרם: שלחו לכל מאמן את קישור החיבור שלו; הוא לוחץ Start ואז "רענן חיבורים".</div>'+
-    '<button class="btn ghost sm" style="margin-bottom:10px" onclick="tgSyncCoaches()">🔄 רענן חיבורי טלגרם</button>'+
+    '<button class="btn ghost sm" style="margin-bottom:10px" onclick="busy(this,function(){return tgSyncCoaches()},\'מרענן…\')">🔄 רענן חיבורי טלגרם</button>'+
     cs.map(function(c){
       var gc=STATE.data.groups.filter(function(g){return g.coachId===c.id;}).length;
       var tg = c.tgConnected
-        ? '<span class="ttag" style="color:var(--present)">✓ טלגרם מחובר</span> · <a href="#" onclick="event.preventDefault();tgTest(\''+c.id+'\')">בדיקה</a>'
+        ? '<span class="ttag" style="color:var(--present)">✓ טלגרם מחובר</span> · <a href="#" onclick="event.preventDefault();busy(this,function(){return tgTest(\''+c.id+'\')},\'שולח…\')">בדיקה</a>'
         : '<a href="#" onclick="event.preventDefault();tgCopyLink(\''+c.id+'\')">📋 העתק קישור חיבור טלגרם</a>';
       return '<div class="list-item"><div class="avatar-wrap">'+avatar(c.name,'coach',c.id,'sm')+'<div class="aw-txt"><div class="aw-name">'+esc(c.name)+'</div><div class="aw-sub">'+gc+' קבוצות · '+tg+'</div></div></div>'+
         '<div class="mini-actions"><button class="icon-btn danger" onclick="confirmDeleteCoach(\''+c.id+'\')">🗑️</button></div></div>';
