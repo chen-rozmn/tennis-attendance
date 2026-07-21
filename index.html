@@ -578,6 +578,13 @@ function courtLabel(court){ court=String(court==null?'':court).trim(); if(!court
 // סקלטון־לואודר — מונע מסך ריק בזמן טעינה
 function skelCards(n){ var s=''; for(var i=0;i<(n||3);i++){ s+='<div class="skel skel-card"></div>'; } return s; }
 function skelRows(n){ var s=''; for(var i=0;i<(n||3);i++){ s+='<div class="att-row"><div class="avatar-wrap"><span class="skel skel-av"></span><span class="skel skel-line"></span></div><span class="skel skel-seg"></span></div>'; } return s; }
+// תזכורת למאמן בטלגרם — פותח את טלגרם עם הודעה מוכנה, המנהל בוחר את המאמן ושולח (בלי הגדרות)
+function sendCoachReminder(coachId, groupId, time){
+  var g=STATE.data.groups.find(function(x){return x.id===groupId;});
+  var gname=g?g.name:''; var cn=coachName(coachId);
+  var msg='תזכורת 🎾 '+cn+', טרם מולאה נוכחות לאימון "'+gname+'" בשעה '+time+' היום. אפשר למלא כאן: '+location.origin;
+  window.open('https://t.me/share/url?url='+encodeURIComponent(location.origin)+'&text='+encodeURIComponent(msg), '_blank');
+}
 var COURT_COUNT = 8; // מספר המגרשים במתחם
 function courtOpts(sel){ var o='<option value="">— ללא מגרש —</option>'; for(var i=1;i<=COURT_COUNT;i++){ o+='<option value="'+i+'" '+(String(sel)===String(i)?'selected':'')+'>מגרש '+i+'</option>'; } return o; }
 function slotsLabel(g){ return groupSlots(g).map(function(s){ var c=courtLabel(s.court); return 'יום '+DAYS[Number(s.day)]+' '+fmtTime(s.time)+(c?' · '+c:''); }).join(' · '); }
@@ -740,6 +747,7 @@ async function renderHome(){
     el.innerHTML='<div class="empty"><div class="big">🎾</div>אין מפגשים היום. נתראה בפעם הבאה!</div>';
     return;
   }
+  $('homeCountNum').textContent = todays.length;  // מציגים מיד את מספר המפגשים (לא ממתינים לטעינת הסטטוסים)
   el.innerHTML=skelCards(3);
 
   var markedSet={}, canceledSet={}, canceledInfo={}, histRows=[];
@@ -816,7 +824,9 @@ function renderHomeList(){
         actions=(info.makeup?'':'<button class="btn ghost sm" onclick="event.stopPropagation();openMakeupModal(\''+g.id+'\')">קבע השלמה</button>')+
           '<button class="icon-btn" title="בטל ביטול" onclick="event.stopPropagation();restoreSession(\''+g.id+'\')">↩︎</button>';
       } else {
-        actions='<button class="btn ghost sm" onclick="event.stopPropagation();openMark(\''+g.id+'\')">סמן</button>'+
+        var tgBtn = (st==='missed' && STATE.role==='manager') ?
+          '<button class="btn ghost sm" title="שלח תזכורת בטלגרם" onclick="event.stopPropagation();sendCoachReminder(\''+cid+'\',\''+g.id+'\',\''+esc(e.time)+'\')">📲 תזכורת</button>' : '';
+        actions=tgBtn+'<button class="btn ghost sm" onclick="event.stopPropagation();openMark(\''+g.id+'\')">סמן</button>'+
           '<button class="icon-btn danger" title="בטל מפגש" onclick="event.stopPropagation();openCancelModal(\''+g.id+'\')">✕</button>';
       }
       var courtTxt = e.court ? ' · '+esc(courtLabel(e.court)) : '';
