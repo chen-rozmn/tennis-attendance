@@ -548,17 +548,21 @@ function $(id){ return document.getElementById(id); }
 function toast(msg,kind){ var t=$('toast'); t.textContent=msg; t.className=(kind||'')+' show'; setTimeout(function(){t.className=(kind||'');},2600); }
 
 function coachName(id){ var c=STATE.data.coaches.find(function(x){return x.id===id;}); return c?c.name:'—'; }
-function nameOfMember(id){ var m=STATE.data.members.find(function(x){return x.id===id;}); return m?m.name:'(חניך שנמחק)'; }
+function nameOfMember(id){ id=String(id==null?'':id); if(id.indexOf('trial:')===0) return id.slice(6)+' (ניסיון)'; var m=STATE.data.members.find(function(x){return x.id===id;}); return m?m.name:'(חניך שנמחק)'; }
+function isTrialId(id){ return String(id==null?'':id).indexOf('trial:')===0; }
 function nameOfGroup(id){ var g=STATE.data.groups.find(function(x){return x.id===id;}); return g?g.name:'(קבוצה שנמחקה)'; }
 // תווית קבוצה כוללת שם מאמן — כדי להבחין בין קבוצות בעלות שם זהה
 function groupLabel(id){ var g=STATE.data.groups.find(function(x){return x.id===id;}); return g?g.name+' · '+coachName(g.coachId):'(קבוצה שנמחקה)'; }
 function memberGroups(m){ return (m.groupIds||[]).map(function(id){return groupLabel(id);}).join(' / '); }
 
 // ---------- לו"ז שבועי (אימונים מרובים לקבוצה) ----------
-function groupSlots(g){ return (g && g.slots && g.slots.length) ? g.slots : [{day:String(g.day), time:fmtTime(g.time)}]; }
-function slotsLabel(g){ return groupSlots(g).map(function(s){ return 'יום '+DAYS[Number(s.day)]+' '+fmtTime(s.time); }).join(' · '); }
+function groupSlots(g){ return (g && g.slots && g.slots.length) ? g.slots : [{day:String(g.day), time:fmtTime(g.time), court:''}]; }
+// תווית מגרש: אם המשתמש כתב כבר "מגרש X" משאירים; אחרת מוסיפים "מגרש " לפני הערך
+function courtLabel(court){ court=String(court==null?'':court).trim(); if(!court) return ''; return /^מגרש/.test(court) ? court : 'מגרש '+court; }
+function slotsLabel(g){ return groupSlots(g).map(function(s){ var c=courtLabel(s.court); return 'יום '+DAYS[Number(s.day)]+' '+fmtTime(s.time)+(c?' · '+c:''); }).join(' · '); }
 function groupHasDay(g, wd){ return groupSlots(g).some(function(s){ return String(s.day)===String(wd); }); }
 function slotTimeForDay(g, wd){ var f=groupSlots(g).filter(function(s){return String(s.day)===String(wd);})[0]; return fmtTime(f ? f.time : groupSlots(g)[0].time); }
+function slotCourtForDay(g, wd){ var f=groupSlots(g).filter(function(s){return String(s.day)===String(wd);})[0]; return f ? (f.court||'') : ''; }
 
 // ---------- אווטארים ותגיות ----------
 function initials(name){
@@ -706,7 +710,7 @@ async function renderHome(){
   var today = new Date().getDay();
   var todays = [];
   homeSource.forEach(function(g){
-    groupSlots(g).forEach(function(s){ if(String(s.day)===String(today)) todays.push({g:g, time:fmtTime(s.time)}); });
+    groupSlots(g).forEach(function(s){ if(String(s.day)===String(today)) todays.push({g:g, time:fmtTime(s.time), court:(s.court||'')}); });
   });
   var el = $('homeToday');
   if(todays.length===0){
@@ -794,7 +798,8 @@ function renderHomeList(){
         actions='<button class="btn ghost sm" onclick="event.stopPropagation();openMark(\''+g.id+'\')">סמן</button>'+
           '<button class="icon-btn danger" title="בטל מפגש" onclick="event.stopPropagation();openCancelModal(\''+g.id+'\')">✕</button>';
       }
-      return '<div class="sess-row"><div style="min-width:0"><div class="aw-name">'+live+' '+esc(g.name)+' · '+esc(e.time)+'</div>'+
+      var courtTxt = e.court ? ' · '+esc(courtLabel(e.court)) : '';
+      return '<div class="sess-row"><div style="min-width:0"><div class="aw-name">'+live+' '+esc(g.name)+' · '+esc(e.time)+courtTxt+'</div>'+
         sessMini(st)+extra+'</div><div class="sess-actions">'+actions+'</div></div>';
     }).join('');
     // פתיחה אוטומטית למאמן שדורש טיפול (אימון שהסתיים ללא נוכחות או מתרחש כרגע)
@@ -1308,13 +1313,17 @@ async function reloadMarkPrefill(){
   updateMarkDateLabel();
   // תצוגת השעה לפי יום המפגש שנבחר
   var wd = new Date(date.split('-')[0], Number(date.split('-')[1])-1, date.split('-')[2]).getDay();
-  $('markGroupMeta').textContent = '👤 '+coachName(g.coachId)+' · יום '+DAYS[wd]+' · '+slotTimeForDay(g, wd);
+  var court = slotCourtForDay(g, wd);
+  $('markGroupMeta').textContent = '👤 '+coachName(g.coachId)+' · יום '+DAYS[wd]+' · '+slotTimeForDay(g, wd)+(court?' · '+courtLabel(court):'');
   var members = membersOfGroup(g.id);
-  STATE.markDraft = {};
+  STATE.markDraft = {}; STATE.trialNames = {};
   members.forEach(function(m){ STATE.markDraft[m.id]='present'; });
   try{
     var hist = await api('getHistory',{from:date,to:date,groupId:g.id});
-    hist.forEach(function(r){ if(STATE.markDraft.hasOwnProperty(r.memberId)) STATE.markDraft[r.memberId]=r.status; });
+    hist.forEach(function(r){
+      if(STATE.markDraft.hasOwnProperty(r.memberId)) STATE.markDraft[r.memberId]=r.status;
+      else if(isTrialId(r.memberId)){ STATE.markDraft[r.memberId]=r.status; }  // שחזור מתאמני ניסיון שנשמרו
+    });
   }catch(e){ /* ממשיכים עם ברירת מחדל */ }
   renderMarkList();
 }
@@ -1322,16 +1331,48 @@ async function reloadMarkPrefill(){
 function renderMarkList(){
   var g = STATE.currentGroup;
   var members = membersOfGroup(g.id);
-  $('markCountPill').textContent = members.length + ' חניכים';
-  if(members.length===0){ $('markList').innerHTML='<div class="empty">אין חניכים בקבוצה זו.<br><button class="btn sm" style="margin-top:12px" onclick="openMemberModal(null,\''+g.id+'\')">➕ הוסף חניך לקבוצה זו</button></div>'; $('saveAttBtn').disabled=true; return; }
-  $('saveAttBtn').disabled=false;
-  $('markList').innerHTML = members.map(function(m){
+  var trialIds = Object.keys(STATE.markDraft).filter(isTrialId);
+  $('markCountPill').textContent = members.length + ' חניכים' + (trialIds.length ? ' · +'+trialIds.length+' ניסיון' : '');
+  function segFor(id, st){
+    function b(k,label){ return '<button class="'+(st===k?'on-'+k:'')+'" onclick="setStatus(\''+id+'\',\''+k+'\')">'+label+'</button>'; }
+    return '<span class="seg">'+b('present','נוכח')+b('late','איחר')+b('absent','נעדר')+'</span>';
+  }
+  var rows = members.map(function(m){
     var st = STATE.markDraft[m.id]||'present';
-    function b(k,label){ return '<button class="'+(st===k?'on-'+k:'')+'" onclick="setStatus(\''+m.id+'\',\''+k+'\')">'+label+'</button>'; }
     return '<div class="att-row"><div class="avatar-wrap">'+avatar(m.name,'member',m.id,'sm')+'<span class="att-name">'+esc(m.name)+'</span></div>'+
-      '<span class="seg">'+b('present','נוכח')+b('late','איחר')+b('absent','נעדר')+'</span></div>';
+      segFor(m.id, st)+'</div>';
   }).join('');
+  // שורות מתאמני ניסיון (הגיעו לאימון ניסיון)
+  rows += trialIds.map(function(id){
+    var st = STATE.markDraft[id]||'present'; var nm = id.slice(6);
+    return '<div class="att-row"><div class="avatar-wrap">'+avatar(nm,'member',id,'sm')+
+      '<span class="att-name">'+esc(nm)+' <span class="pill" style="background:var(--hard,#2C6E8F)">ניסיון</span></span>'+
+      '<button class="icon-btn danger" title="הסר" style="margin-inline-start:4px" onclick="removeTrial(\''+esc(id)+'\')">✕</button></div>'+
+      segFor(id, st)+'</div>';
+  }).join('');
+  rows += '<button class="btn ghost sm" style="margin-top:10px" onclick="openTrialModal()">➕ מתאמן ניסיון</button>';
+  $('markList').innerHTML = rows;
+  $('saveAttBtn').disabled = (members.length===0 && trialIds.length===0);
+  if(members.length===0 && trialIds.length===0){
+    $('markList').innerHTML = '<div class="empty">אין חניכים בקבוצה זו.<br><button class="btn sm" style="margin-top:12px" onclick="openMemberModal(null,\''+g.id+'\')">➕ הוסף חניך לקבוצה זו</button>'+
+      '<div style="margin-top:8px"><button class="btn ghost sm" onclick="openTrialModal()">➕ מתאמן ניסיון</button></div></div>';
+  }
 }
+// מתאמן ניסיון — הוספת שורה חד-פעמית לאימון (לא נשמר כחניך קבוע)
+function openTrialModal(){
+  openModal('<h3>מתאמן ניסיון</h3><p class="sub">מתאמן שהגיע לאימון ניסיון — יירשם לנוכחות היום בלבד</p>'+
+    '<label class="fld"><span class="lbl">שם המתאמן</span><input class="input" id="trialName" placeholder="שם מלא" autocomplete="off"></label>'+
+    '<div class="modal-actions"><button class="btn secondary" onclick="closeModal()">ביטול</button>'+
+    '<button class="btn" onclick="addTrial()">הוספה</button></div>');
+  setTimeout(function(){ var t=$('trialName'); if(t) t.focus(); },50);
+}
+function addTrial(){
+  var nm=$('trialName').value.trim().replace(/[:]/g,' ');  // מונע שבירת המזהה
+  if(!nm){ toast('נא להזין שם','bad'); return; }
+  STATE.markDraft['trial:'+nm]='present';
+  closeModal(); renderMarkList();
+}
+function removeTrial(id){ delete STATE.markDraft[id]; renderMarkList(); }
 function setStatus(memberId,status){ STATE.markDraft[memberId]=status; renderMarkList(); }
 function markAll(status){ Object.keys(STATE.markDraft).forEach(function(k){STATE.markDraft[k]=status;}); renderMarkList(); }
 
@@ -1444,7 +1485,7 @@ function openGroupModal(id){
   var g = id ? STATE.data.groups.find(function(x){return x.id===id;}) : null;
   var defCoach = g ? g.coachId : (STATE.role==='coach'?STATE.coachId:'');
   var coachOpts = STATE.data.coaches.map(function(c){return '<option value="'+c.id+'" '+(defCoach===c.id?'selected':'')+'>'+esc(c.name)+'</option>';}).join('');
-  SLOT_EDIT = g ? groupSlots(g).map(function(s){return {day:String(s.day), time:fmtTime(s.time)};}) : [{day:String(new Date().getDay()), time:'16:00'}];
+  SLOT_EDIT = g ? groupSlots(g).map(function(s){return {day:String(s.day), time:fmtTime(s.time), court:(s.court||'')};}) : [{day:String(new Date().getDay()), time:'16:00', court:''}];
   openModal(
     '<h3>'+(g?'עריכת קבוצה':'קבוצה חדשה')+'</h3>'+
     '<label class="fld"><span class="lbl">שם הקבוצה</span><input class="input" id="gName" value="'+esc(g?g.name:'')+'" placeholder="למשל: מתחילים א׳"></label>'+
@@ -1459,19 +1500,20 @@ function openGroupModal(id){
 }
 function readSlotRows(){
   return Array.prototype.slice.call(document.querySelectorAll('#slotList .slot-row')).map(function(r){
-    return {day:r.querySelector('.slot-day').value, time:r.querySelector('.slot-time').value};
+    return {day:r.querySelector('.slot-day').value, time:r.querySelector('.slot-time').value, court:r.querySelector('.slot-court').value.trim()};
   });
 }
 function renderSlotRows(){
   var dayOpts = function(sel){ return DAYS.map(function(d,i){return '<option value="'+i+'" '+(String(sel)===String(i)?'selected':'')+'>'+d+'</option>';}).join(''); };
   $('slotList').innerHTML = SLOT_EDIT.map(function(s,i){
-    return '<div class="slot-row" style="display:flex;gap:8px;margin-bottom:8px;align-items:center">'+
-      '<select class="input slot-day">'+dayOpts(s.day)+'</select>'+
-      '<select class="input slot-time">'+timeOptions(s.time)+'</select>'+
+    return '<div class="slot-row" style="display:flex;gap:6px;margin-bottom:8px;align-items:center;flex-wrap:wrap">'+
+      '<select class="input slot-day" style="flex:1;min-width:88px">'+dayOpts(s.day)+'</select>'+
+      '<select class="input slot-time" style="flex:1;min-width:88px">'+timeOptions(s.time)+'</select>'+
+      '<input class="input slot-court" style="flex:1;min-width:78px" placeholder="מגרש" value="'+esc(s.court||'')+'">'+
       '<button type="button" class="icon-btn danger" title="הסר אימון" onclick="removeSlotRow('+i+')">✕</button></div>';
   }).join('');
 }
-function addSlotRow(){ SLOT_EDIT = readSlotRows(); SLOT_EDIT.push({day:String(new Date().getDay()), time:'16:00'}); renderSlotRows(); }
+function addSlotRow(){ SLOT_EDIT = readSlotRows(); SLOT_EDIT.push({day:String(new Date().getDay()), time:'16:00', court:''}); renderSlotRows(); }
 function removeSlotRow(i){
   SLOT_EDIT = readSlotRows();
   if(SLOT_EDIT.length<=1){ toast('חייב להיות לפחות אימון אחד','bad'); return; }
